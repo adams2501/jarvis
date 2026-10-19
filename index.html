@@ -530,27 +530,32 @@ const speaker = {
   setActive(v) { if (this.active !== v) { this.active = v; onSpeakChange(); } },
   say(text) {
     const t = speakable(text); if (!t) return;
-    const item = { text: t };
-    if (this.useEleven()) item.buf = elevenTTS(t).catch(e => { item.err = e; return null; });
+    const item = { text: t, eleven: this.useEleven() };
     this.q.push(item); this.setActive(true);
     if (!this.cur) this.next();
+    else if (this.q[0] === item) this.fetch(item);
   },
+  fetch(item) { if (item && item.eleven && !item.buf) item.buf = elevenTTS(item.text).catch(e => { item.err = e; return null; }); },
   next() {
     const item = this.q.shift();
     if (!item) { this.cur = null; this.setActive(false); return; }
     this.cur = item;
+    this.fetch(item); this.fetch(this.q[0]);
     const done = () => { if (this.cur !== item) return; this.cur = null; this.next(); };
     if (item.buf) item.buf.then(b => { if (this.cur !== item) return; if (!b) { this.warnEleven(item.err); this.sys(item.text, done); } else this.playBuf(b, done); });
     else this.sys(item.text, done);
   },
   playBuf(b, done) {
     const c = audio.get();
+    let s = null, to = 0, fin = false;
+    const f = () => { if (fin) return; fin = true; clearTimeout(to); if (this.src === s) this.src = null; done(); };
     try {
-      const s = c.createBufferSource(); s.buffer = b; s.connect(c.destination);
-      s.onended = () => { if (this.src === s) this.src = null; done(); };
-      this.src = s; s.start(); this.pulse = 1;
+      if (c.state !== 'running') c.resume().catch(() => {});
+      s = c.createBufferSource(); s.buffer = b; s.connect(c.destination);
+      s.onended = f; this.src = s; s.start(); this.pulse = 1;
+      to = setTimeout(f, b.duration * 1000 + 1500);
       const tick = setInterval(() => { if (this.src !== s) { clearInterval(tick); return; } this.pulse = Math.max(this.pulse, 0.6 + Math.random() * 0.4); }, 120);
-    } catch (e) { done(); }
+    } catch (e) { f(); }
   },
   sys(text, done) {
     if (!this.sysOk) { done(); return; }
@@ -576,17 +581,20 @@ const speaker = {
   unlockSys() { if (!this.sysOk) return; try { const u = new SpeechSynthesisUtterance('.'); u.volume = 0; u.rate = 2; u.lang = 'pl-PL'; speechSynthesis.speak(u); } catch (e) { /* ignore */ } },
   warnEleven(err) { if (this.warned) return; this.warned = true; showBanner(`Głos ElevenLabs nie działa: ${(err && err.message) || 'brak odpowiedzi'}. Mówię głosem telefonu.`); }
 };
-async function elevenTTS(text) {
+async function elevenTTS(text, retry = true) {
   const s = S.settings;
-  let r;
+  const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 12000);
+  let r, ab;
   try {
     r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(s.elVoice || DEF_VOICE)}?output_format=mp3_44100_128`, {
-      method: 'POST', headers: { 'xi-api-key': s.elKey, 'content-type': 'application/json', accept: 'audio/mpeg' },
+      method: 'POST', signal: ac.signal, headers: { 'xi-api-key': s.elKey, 'content-type': 'application/json', accept: 'audio/mpeg' },
       body: JSON.stringify({ text, model_id: 'eleven_flash_v2_5', language_code: 'pl' })
     });
-  } catch (e) { throw new Error('brak połączenia z ElevenLabs'); }
+    if (r.ok) ab = await r.arrayBuffer();
+  } catch (e) { clearTimeout(to); throw new Error('brak połączenia z ElevenLabs'); }
+  clearTimeout(to);
+  if (r.status === 429 && retry) { await sleep(700); return elevenTTS(text, false); }
   if (!r.ok) throw new Error(r.status === 401 ? 'zły klucz ElevenLabs' : (r.status === 402 || r.status === 429) ? 'skończył się limit ElevenLabs' : `błąd ElevenLabs ${r.status}`);
-  const ab = await r.arrayBuffer();
   const c = audio.get(); if (!c) throw new Error('brak dźwięku');
   return await new Promise((res, rej) => { const p = c.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); });
 }
@@ -625,20 +633,26 @@ class SystemListener {
     try { rec = new SR(); } catch (e) { this.h.error('nosr'); return; }
     this.rec = rec;
     rec.lang = 'pl-PL'; rec.interimResults = true; rec.continuous = !IS_IOS; rec.maxAlternatives = 1;
-    let consumed = 0, current = '', endTimer = 0, started = false;
+    let current = '', endTimer = 0, started = false;
     const take = () => { clearTimeout(endTimer); const t = current.trim(); current = ''; if (t) this.h.utterance(t); };
     const mark = () => { this.lastEvt = Date.now(); };
+    const cut = () => {
+      if (g !== this.gen) return;
+      this.h.partial(''); take();
+      if (g !== this.gen) return;
+      this.gen++; this.rec = null;
+      try { rec.abort(); } catch (err) { /* ignore */ }
+      if (this.active && !this.paused) setTimeout(() => { if (!this.rec && this.active && !this.paused) this.spawn(); }, 60);
+    };
     rec.onstart = () => { if (g !== this.gen) return; started = true; this.fails = 0; mark(); };
     rec.onaudiostart = mark; rec.onspeechstart = mark;
     rec.onresult = e => {
       if (g !== this.gen) return; mark();
-      let fin = '', interim = '';
-      for (let i = consumed; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) fin += r[0].transcript; else interim += r[0].transcript; }
-      if (fin.trim() && !interim.trim()) { consumed = e.results.length; current = fin; this.h.partial(''); take(); return; }
-      current = fin + interim; this.h.partial(current.trim());
-      const len = e.results.length;
+      let txt = '', allFinal = true;
+      for (let i = 0; i < e.results.length; i++) { const r = e.results[i]; txt += r[0].transcript; if (!r.isFinal) allFinal = false; }
+      current = txt; this.h.partial(current.trim());
       clearTimeout(endTimer);
-      endTimer = setTimeout(() => { if (g !== this.gen) return; consumed = len; this.h.partial(''); take(); if (IS_IOS) { try { rec.abort(); } catch (err) { /* ignore */ } } }, this.h.endMs());
+      endTimer = setTimeout(cut, allFinal ? Math.min(400, this.h.endMs()) : this.h.endMs());
     };
     rec.onerror = ev => {
       if (g !== this.gen) return; mark();
@@ -656,7 +670,7 @@ class SystemListener {
       if (this.active && !this.paused) setTimeout(() => { if (g === this.gen) this.spawn(); }, IS_IOS ? 250 : 120);
     };
     mark();
-    try { rec.start(); } catch (e) { this.fails++; setTimeout(() => { if (g === this.gen) this.spawn(); }, 700); }
+    try { rec.start(); } catch (e) { this.fails++; this.rec = null; if (this.fails >= 3) { this.h.error('stall'); return; } setTimeout(() => { if (g === this.gen) this.spawn(); }, 700); }
   }
   watch() {
     if (!this.active || this.paused || !this.rec) return;
@@ -665,19 +679,22 @@ class SystemListener {
   }
   pause() { if (this.paused) return; this.paused = true; this.gen++; if (this.rec) { try { this.rec.abort(); } catch (e) { /* ignore */ } this.rec = null; } }
   resume() { if (!this.active || !this.paused) return; this.paused = false; this.spawn(); }
-  restartFromTap() { this.active = true; this.fails = 0; this.paused = true; this.resume(); }
+  restartFromTap() { this.pause(); this.active = true; this.fails = 0; this.resume(); }
   stop() { this.pause(); this.active = false; clearInterval(this.wd); }
 }
 
 class CloudListener {
-  constructor(h) { this.h = h; this.active = false; this.paused = true; this.stream = null; this.reset(); this.ignoreUntil = 0; this.inflight = 0; }
+  constructor(h) { this.h = h; this.active = false; this.paused = true; this.stream = null; this.reset(); this.ignoreUntil = 0; this.inflight = 0; this.openGen = 0; }
   reset() { this.inSpeech = false; this.seg = []; this.segMs = 0; this.pre = []; this.preMs = 0; this.hot = 0; this.quietMs = 0; this.floor = 0; }
   async start() { this.active = true; this.paused = false; await this.open(); }
   async open() {
     if (this.stream) return;
+    const g = ++this.openGen;
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-    if (!this.active || this.paused) { stream.getTracks().forEach(t => t.stop()); return; }
-    const c = audio.get(); if (c.state === 'suspended') { try { await c.resume(); } catch (e) { /* ignore */ } }
+    const stale = () => g !== this.openGen || !this.active || this.paused || !!this.stream;
+    if (stale()) { stream.getTracks().forEach(t => t.stop()); return; }
+    const c = audio.get(); if (c.state !== 'running') { try { await c.resume(); } catch (e) { /* ignore */ } }
+    if (stale()) { stream.getTracks().forEach(t => t.stop()); return; }
     this.stream = stream;
     this.src = c.createMediaStreamSource(stream);
     this.proc = c.createScriptProcessor(2048, 1, 1);
@@ -709,12 +726,12 @@ class CloudListener {
     if (!this.inSpeech) {
       const thr = Math.max(0.012, (this.floor || rms) * 3);
       if (rms > thr) {
-        this.hot++; this.pre.push(ds); this.preMs += durMs;
+        this.hot++; this.pre.push(ds); this.preMs += ds.length / 16;
         if (this.hot >= 3) { this.inSpeech = true; this.seg = this.pre; this.segMs = this.preMs; this.pre = []; this.preMs = 0; this.quietMs = 0; this.h.partial('…'); }
       } else {
         this.hot = 0;
         this.floor = this.floor ? this.floor * 0.96 + rms * 0.04 : rms;
-        this.pre.push(ds); this.preMs += durMs;
+        this.pre.push(ds); this.preMs += ds.length / 16;
         while (this.preMs > 450 && this.pre.length > 1) { const r = this.pre.shift(); this.preMs -= r.length / 16; }
       }
     } else {
@@ -737,14 +754,14 @@ class CloudListener {
     catch (e) { this.h.partial(''); showBanner(e.message || 'Rozpoznawanie mowy nie działa.'); }
     finally { this.inflight--; }
   }
-  pause() { if (this.paused) return; this.paused = true; this.inSpeech = false; this.seg = []; this.pre = []; this.preMs = 0; this.hot = 0; if (IS_IOS) this.close(); }
+  pause() { if (this.paused) return; this.paused = true; this.openGen++; this.inSpeech = false; this.seg = []; this.pre = []; this.preMs = 0; this.hot = 0; if (IS_IOS) this.close(); }
   async resume() {
     if (!this.active || !this.paused) return;
     this.paused = false;
     if (!this.stream) { try { await this.open(); } catch (e) { this.paused = true; this.h.error(e && e.name === 'NotAllowedError' ? 'mic' : 'stall'); } }
   }
-  restartFromTap() { this.active = true; this.paused = true; this.close(); return this.resume(); }
-  stop() { this.active = false; this.paused = true; this.close(); }
+  restartFromTap() { this.active = true; this.paused = true; this.openGen++; this.close(); return this.resume(); }
+  stop() { this.active = false; this.paused = true; this.openGen++; this.close(); }
 }
 function encodeWav(chunks, rate) {
   let len = 0; for (const c of chunks) len += c.length;
@@ -804,10 +821,10 @@ function startListener() {
 function onListenError(code) {
   if (code === 'mic') { rt.needTap = true; showBanner(IS_IOS ? 'Jarvis nie ma dostępu do mikrofonu. Pozwól na mikrofon, gdy telefon zapyta (albo w Ustawienia → Safari → Mikrofon), potem stuknij przycisk na dole.' : 'Jarvis nie ma dostępu do mikrofonu. Pozwól na mikrofon w przeglądarce (ikona kłódki przy adresie), potem stuknij przycisk na dole.'); }
   else if (code === 'nomic') { rt.needTap = true; showBanner('Nie widzę mikrofonu. Sprawdź, czy jest podłączony, i stuknij przycisk na dole.'); }
-  else if (code === 'network') showBanner('Rozpoznawanie mowy potrzebuje internetu.');
+  else if (code === 'network') { rt.needTap = true; showBanner('Rozpoznawanie mowy potrzebuje internetu. Gdy wróci, stuknij przycisk na dole.'); }
   else if (code === 'nosr') showBanner('Ta przeglądarka nie obsługuje rozpoznawania mowy.');
   else rt.needTap = true;
-  renderResume(); renderStatus();
+  renderResume(); syncListen();
 }
 function syncListen() {
   const L = rt.listener; if (!L || !rt.started) { renderStatus(); return; }
@@ -962,8 +979,15 @@ async function claudeStream({ model, system, messages, tools, maxTokens, signal,
       default: break;
     }
   };
+  const readIdle = () => new Promise((resolve, reject) => {
+    const t = setTimeout(() => { try { reader.cancel(); } catch (e) { /* ignore */ } const er = new Error('timeout'); er.kind = 'net'; reject(er); }, 30000);
+    reader.read().then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
   for (;;) {
-    const { value, done } = await reader.read();
+    let chunk;
+    try { chunk = await readIdle(); }
+    catch (e) { if ((e && e.name === 'AbortError') || (e && e.kind)) throw e; const er = new Error('network'); er.kind = 'net'; throw er; }
+    const { value, done } = chunk;
     if (done) break;
     buf += dec.decode(value, { stream: true });
     let i;
@@ -975,7 +999,7 @@ async function claudeStream({ model, system, messages, tools, maxTokens, signal,
       handle(ev);
     }
   }
-  const content = blocks.filter(Boolean).map(b => { const { _json, ...rest } = b; return rest; }).filter(b => !(b.type === 'text' && !b.text));
+  const content = blocks.filter(Boolean).map(b => { const { _json, ...rest } = b; return rest; }).filter(b => !(b.type === 'text' && !String(b.text || '').trim()));
   return { content, stop, text };
 }
 async function claudeCall(kind, p) {
@@ -1119,7 +1143,7 @@ async function ask(cmd) {
     addTurn({ role: 'assistant', content: final || 'Zrobione.' });
   } catch (e) {
     pend.end();
-    if (e && e.name === 'AbortError') { if (shown.trim()) addTurn({ role: 'assistant', content: tidy(shown) + ' …' }); }
+    if (e && e.name === 'AbortError') { if (shown.trim() && (!rt.busy || rt.busy === ctl)) addTurn({ role: 'assistant', content: tidy(shown) + ' …' }); }
     else {
       if (shown.trim()) addTurn({ role: 'assistant', content: tidy(shown) + ' …' });
       showBanner(errCopy(e)); speaker.say(spokenErr(e));
@@ -1128,7 +1152,7 @@ async function ask(cmd) {
   } finally {
     if (rt.busy === ctl) rt.busy = null;
     rt.awakeUntil = Date.now() + S.settings.followUp * 1000;
-    $('#stop').hidden = !speaker.active;
+    $('#stop').hidden = !(rt.busy || speaker.active);
     syncListen();
   }
 }
@@ -1518,6 +1542,7 @@ if ('ResizeObserver' in window) new ResizeObserver(sizeOrb).observe(orb.cv); els
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { stopOrb(); if (rt.listener) rt.listener.pause(); return; }
   startOrb(); checkReminders();
+  if (audio.ctx && audio.ctx.state !== 'running') audio.ctx.resume().catch(() => {});
   if (rt.started) { requestWakeLock(); syncListen(); }
 });
 if (speaker.sysOk) { try { speechSynthesis.addEventListener('voiceschanged', () => { speaker.pickVoice(); if (!$('#sheet').hidden) renderVoices(); }); } catch (e) { /* older engines */ } }
