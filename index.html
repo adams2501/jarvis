@@ -200,6 +200,11 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 #dormant{z-index:80;background:var(--ground)}
 #dormant .btn,#gate .install-btn,#installov .btn{margin-top:18px}
 #installov{z-index:75;background:var(--ground)}
+#pairov,#scanov{z-index:78;background:var(--ground)}
+.qr{background:#fff;padding:14px;border-radius:14px;margin-top:16px}
+.qr svg,.qr img{display:block;width:min(70vmin,460px);height:auto}
+#scan-video{width:min(90vw,480px);max-height:60vh;border-radius:16px;background:#000;object-fit:cover}
+#pairov .btn,#scanov .btn{margin-top:16px}
 
 @media (prefers-reduced-motion: reduce){.panel{animation:none}.pending .body:empty::after{animation:none;clip-path:none}}
 @media (max-height:640px){#orb{width:min(40vw,150px,22vh)}.brand small{display:none}}
@@ -259,7 +264,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
     </ol>
     <label class="field"><span>Klucz Claude API</span><input class="txt mask" id="setup-key" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore autocapitalize="off" spellcheck="false" placeholder="sk-ant-…"></label>
     <label class="field" id="setup-ws-field" hidden><span>ID workspace</span><input class="txt" id="setup-ws" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="wrkspc_…"><small>Potrzebne tylko dla klucza bez wybranego workspace. Znajdziesz je w Claude Console: Settings → Workspaces → kolumna ID przy „Default”.</small></label>
-    <div class="row2"><button class="btn primary" id="setup-save" type="button">Zapisz i sprawdź</button></div>
+    <div class="row2"><button class="btn primary" id="setup-save" type="button">Zapisz i sprawdź</button><button class="btn" id="setup-pair" type="button">Mam Jarvisa na Macu: zeskanuj kod</button></div>
     <div class="err" id="setup-err" role="alert"></div>
     <p class="info">Klucz zostaje tylko na tym urządzeniu. Na iPhonie i na Macu wklejasz go osobno.</p>
   </div>
@@ -284,6 +289,18 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
   <p class="gate-note"><b>Zainstaluj Jarvisa na Macu</b><br>Zainstalowany Jarvis po otwarciu od razu słucha, bez stukania.</p>
   <button class="btn primary install-btn" type="button" hidden>Zainstaluj</button>
   <p class="gate-note" id="installov-hint">Chwila… Jeśli przycisk się nie pojawi, kliknij ikonę instalacji po prawej stronie paska adresu Chrome.</p>
+</div>
+
+<div class="overlay" id="pairov" hidden>
+  <p class="gate-note"><b>Zeskanuj iPhone'em</b><br>W Jarvisie na iPhonie stuknij „Połącz z Makiem” (albo na pierwszym ekranie „Mam Jarvisa na Macu”). Kod zawiera Twoje klucze, nie pokazuj go nikomu.</p>
+  <div id="pair-qr" class="qr"></div>
+  <button class="btn" type="button" id="pair-close">Zamknij</button>
+</div>
+
+<div class="overlay" id="scanov" hidden>
+  <video id="scan-video" playsinline muted></video>
+  <p class="gate-note" id="scan-msg">Skieruj aparat na kod na ekranie Maca.</p>
+  <button class="btn" type="button" id="scan-close">Anuluj</button>
 </div>
 
 <div class="overlay" id="dormant" hidden>
@@ -411,6 +428,13 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
       </div>
 
       <div class="group">
+        <h3>Mac i iPhone</h3>
+        <div class="info" id="mac-info"></div>
+        <div class="row2"><button class="btn" type="button" id="pair-show">Przenieś na iPhone'a</button><button class="btn" type="button" id="pair-scan">Połącz z Makiem</button></div>
+        <small class="info">„Przenieś na iPhone'a” pokazuje na Macu kod. Na iPhonie stuknij „Połącz z Makiem” i zeskanuj go: klucze, głos, pamięć i lista przejdą same.</small>
+      </div>
+
+      <div class="group">
         <div class="row2"><button class="btn warn" type="button" id="clear-chat">Wyczyść rozmowę</button><button class="btn warn" type="button" id="forget-keys">Usuń klucze</button></div>
         <div class="info" id="sys-info"></div>
       </div>
@@ -454,9 +478,9 @@ const DEFAULTS = {
   mode: 'wake', followUp: 15, endMs: 800,
   stt: 'auto', sttProvider: 'eleven', sttKey: '',
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
-  greeted: false, voiceMigrated: false, voiceSkip: false, elOk: ''
+  greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '13';
+const APP_VERSION = '14';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -469,7 +493,7 @@ const keyFp = k => k ? `${k.slice(0, 3)}…${k.slice(-4)}:${k.length}` : '';
 const PERSONAS = {
   konkretny: 'Rzeczowy i ciepły, bez lania wody. Od razu przechodzisz do sedna.',
   lokaj: 'Kulturalny i elegancki, z suchym, delikatnym humorem, jak filmowy kamerdyner. Uprzejmy, ale nigdy przesłodzony.',
-  kumpel: 'Luźny i bezpośredni, jak dobry kumpel. Możesz zażartować, ale dalej pomagasz konkretnie.'
+  kumpel: 'Rozmawiasz jak dobry kolega: na „ty”, luźno, ciepło i z humorem. Interesujesz się jego sprawami: pamiętasz, co ci opowiadał, sam do tego wracasz i czasem dopytujesz jednym krótkim pytaniem (jak poszło, co nowego). Masz własne zdanie i mówisz je szczerze. Nie słodzisz, nie wypytujesz na siłę i dalej konkretnie pomagasz.'
 };
 const LS = 'jarvis.app.';
 const load = (k, d) => { try { const v = localStorage.getItem(LS + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
@@ -482,14 +506,17 @@ function cleanSettings(d) {
 }
 const S = {
   settings: cleanSettings(load('settings', null)),
-  memory: load('memory', []), tasks: load('tasks', []), chat: load('chat', []), jobs: load('jobs', [])
+  memory: load('memory', []), tasks: load('tasks', []), chat: load('chat', []), jobs: load('jobs', []), timers: load('timers', []),
+  news: load('news', null)
 };
-for (const k of ['memory', 'tasks', 'chat', 'jobs']) if (!Array.isArray(S[k])) S[k] = [];
+for (const k of ['memory', 'tasks', 'chat', 'jobs', 'timers']) if (!Array.isArray(S[k])) S[k] = [];
+if (!S.news || typeof S.news !== 'object' || typeof S.news.text !== 'string') S.news = null;
 if (!S.settings.voiceMigrated) {
   if (S.settings.elVoice === 'EXAVITQu4vr4xnSDxMaL' || !S.settings.elVoice) { S.settings.elVoice = DEF_VOICE; S.settings.gender = 'ona'; }
   if (S.settings.elKey) S.settings.tts = 'eleven';
   S.settings.voiceMigrated = true; store('settings', S.settings);
 }
+if (!S.settings.kolega) { S.settings.persona = 'kumpel'; S.settings.kolega = true; store('settings', S.settings); }
 if (S.settings.elKey) {
   const k = pickElKey(S.settings.elKey);
   if (k !== S.settings.elKey) { S.settings.elKey = k; S.settings.elOk = ''; store('settings', S.settings); }
@@ -917,6 +944,7 @@ function onSpeakChange() {
 function onUtterance(raw) {
   let text = String(raw || '').replace(/\s+/g, ' ').trim();
   if (!text || HALLUCINATION.test(text)) return;
+  if (rt.ringing) { stopRinging(); rt.awakeUntil = Date.now() + S.settings.followUp * 1000; audio.chime(false); const rest = (findWake(text) || { rest: text }).rest; if (!rest || STOP_PHRASE.test(rest.trim()) || /^(ok|okej|dobra|wy[łl][aą]cz|stop|wstaj[eę]|ju[zż]|s[lł]ysz[eę])[.!]?$/i.test(rest.trim())) return; }
   if (rt.busy || speaker.active) return;
   rt.lastHeardAt = Date.now();
   const awake = S.settings.mode === 'always' || Date.now() < rt.awakeUntil;
@@ -956,12 +984,15 @@ function contextBlock() {
   const open = S.tasks.filter(t => !t.done);
   const tasks = open.length ? open.map(t => `- [${t.id}] ${t.text}${t.due ? ` (termin: ${t.due})` : ''}`).join('\n') : '(brak otwartych zadań)';
   const jobs = S.jobs.filter(j => j.status === 'running' && jobCtls.has(j.id)).map(j => `- ${j.title}`).join('\n');
+  const timers = S.timers.filter(t => !t.fired).map(t => `- [${t.id}] ${t.kind === 'budzik' ? 'budzik' : 'minutnik'}${t.label ? ` „${t.label}”` : ''}: dzwoni o ${hhmmss(t.at)}${t.kind === 'minutnik' ? ` (za ${leftText(t.at)})` : ''}`).join('\n');
+  const cjobs = S.jobs.filter(j => j.kind === 'claude' && j.sesja).slice(0, 4).map(j => `- [sesja ${j.sesja}] ${j.title} (${j.tryb === 'szkic' ? 'szkic maila' : 'odczyt'}, ${j.status === 'done' ? 'gotowe' : j.status === 'running' ? 'w toku' : 'nieudane'})`).join('\n');
+  const news = S.news && S.news.text ? `\nBieżące wiadomości (zebrane ${new Date(S.news.at).toLocaleString('pl-PL', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}):\n${S.news.text.slice(0, 1800)}` : '';
   return `Teraz: ${nowLine()}, czas polski.${s.city ? `\nMiasto użytkownika: ${s.city}.` : ''}
 O użytkowniku: ${s.about || '(brak)'}
 Pamięć (trwałe fakty, id w nawiasach):
 ${mem}
 Lista zadań i przypomnień:
-${tasks}${jobs ? `\nTeraz pracuje w tle:\n${jobs}` : ''}`;
+${tasks}${timers ? `\nMinutniki i budziki:\n${timers}` : ''}${jobs ? `\nTeraz pracuje w tle:\n${jobs}` : ''}${cjobs ? `\nOstatnie zlecenia dla Claude'a na Macu:\n${cjobs}` : ''}${news}`;
 }
 function webOn() { return S.settings.webSearch && !rt.noWeb; }
 function systemPrompt() {
@@ -979,11 +1010,13 @@ Tekst pochodzi z rozpoznawania mowy i bywa przekręcony. Domyśl się sensu, a g
 ${contextBlock()}
 
 Zasady:
-- Trwałe fakty o użytkowniku zapisuj narzędziem zapamietaj, gdy o to prosi albo poda coś, co przyda się później.
+- Trwałe fakty o użytkowniku zapisuj narzędziem zapamietaj, gdy o to prosi albo gdy opowiada coś o sobie, swojej pracy, planach albo bliskich, co przyda się później. Potem naturalnie do tego wracasz.
+- W luźnej rozmowie możesz nawiązać do jego spraw z pamięci albo do bieżących wiadomości; przy krótkich poleceniach po prostu je wykonaj.
+- Minutniki i budziki nastawiasz narzędziami minutnik i budzik; dzwonią, dopóki aplikacja jest otwarta.
 - Przypomnienia i zadania zapisuj narzędziem dodaj_zadanie, z terminem, jeśli padł. Na głos przypominasz tylko wtedy, gdy aplikacja jest otwarta; nie obiecuj powiadomień.
-- ${webOn() ? 'Przy pytaniach o rzeczy bieżące (pogoda, wyniki, wiadomości, godziny otwarcia, ceny) użyj web_search i podaj sam wynik w jednym, dwóch zdaniach, bez wymieniania źródeł.' : 'Nie masz dostępu do internetu; przy pytaniach o rzeczy bieżące powiedz to krótko.'}
+- ${webOn() ? 'Jesteś na bieżąco: znasz przegląd wiadomości powyżej, a przy pytaniach o rzeczy bieżące albo gdy prosi, żeby coś znaleźć (pogoda, wyniki, wiadomości, ceny, godziny otwarcia, produkty, ludzie, firmy) użyj web_search i podaj sam wynik w jednym, dwóch zdaniach, bez wymieniania źródeł.' : 'Nie masz dostępu do internetu; przy pytaniach o rzeczy bieżące powiedz to krótko.'}
 - Dłuższą pracę (plan, dłuższy tekst, przegląd wielu źródeł) zlecaj narzędziem zlec_w_tle i powiedz krótko, że się tym zajmujesz.
-- Nie masz dostępu do maila, kalendarza, Premiere ani telefonu. Jeśli o to poprosi, powiedz to jednym zdaniem.
+${macRules()}
 - Nie zmyślaj.`;
 }
 function historyMessages() {
@@ -1152,10 +1185,19 @@ const TOOL_DEFS = [
   { name: 'dodaj_zadanie', description: 'Dodaje pozycję do listy zadań i przypomnień. Termin w formacie RRRR-MM-DDTHH:MM, czas polski; sam dzień oznacza 9:00. Zwraca id.', input_schema: { type: 'object', properties: { tresc: { type: 'string', description: 'Krótko, co zrobić.' }, termin: { type: 'string', description: 'Opcjonalnie, np. 2026-10-20T15:00.' } }, required: ['tresc'] } },
   { name: 'odhacz_zadanie', description: 'Oznacza zadanie jako zrobione, po id.', input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'usun_zadanie', description: 'Usuwa zadanie z listy, po id.', input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
-  { name: 'zlec_w_tle', description: 'Zleca dłuższą pracę (plan, dłuższy tekst, research z wielu źródeł). Wraca od razu; wynik pojawi się i zostanie przeczytany sam, gdy będzie gotowy.', input_schema: { type: 'object', properties: { tytul: { type: 'string', description: 'Krótki tytuł, 2–5 słów.' }, zadanie: { type: 'string', description: 'Pełny opis z potrzebnym kontekstem z rozmowy.' } }, required: ['tytul', 'zadanie'] } }
+  { name: 'zlec_w_tle', description: 'Zleca dłuższą pracę (plan, dłuższy tekst, research z wielu źródeł). Wraca od razu; wynik pojawi się i zostanie przeczytany sam, gdy będzie gotowy.', input_schema: { type: 'object', properties: { tytul: { type: 'string', description: 'Krótki tytuł, 2–5 słów.' }, zadanie: { type: 'string', description: 'Pełny opis z potrzebnym kontekstem z rozmowy.' } }, required: ['tytul', 'zadanie'] } },
+  { name: 'minutnik', description: 'Nastawia minutnik. Po czasie Jarvis dzwoni i mówi, aż Adam się odezwie. Zwraca id i godzinę.', input_schema: { type: 'object', properties: { minuty: { type: 'number' }, sekundy: { type: 'number' }, nazwa: { type: 'string', description: 'Opcjonalnie, np. "pizza".' } } } },
+  { name: 'budzik', description: 'Nastawia budzik na konkretną godzinę. Format RRRR-MM-DDTHH:MM, czas polski.', input_schema: { type: 'object', properties: { godzina: { type: 'string' }, nazwa: { type: 'string' } }, required: ['godzina'] } },
+  { name: 'usun_alarm', description: 'Kasuje minutnik albo budzik po id albo wszystkie, gdy id to "wszystkie".', input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } }
+];
+const MAC_TOOLS = [
+  { name: 'mac', description: 'Steruje Makiem Adama przez pomocnika: otwiera programy (np. "Adobe Premiere Pro 2026", "Spotify", "Finder"), strony i pliki, szuka plików, zmienia głośność, steruje muzyką, zamyka programy, pokazuje powiadomienie.', input_schema: { type: 'object', properties: { akcja: { type: 'string', enum: ['otworz_program', 'otworz_strone', 'otworz_plik', 'znajdz_plik', 'glosnosc', 'muzyka', 'zamknij_program', 'powiadomienie'] }, cel: { type: 'string', description: 'Nazwa programu, adres strony, nazwa pliku; przy muzyce: play, pauza, nastepny, poprzedni; przy głośności: wycisz albo wlacz.' }, wartosc: { type: 'number', description: 'Głośność 0–100.' } }, required: ['akcja'] } },
+  { name: 'kalendarz', description: 'Kalendarz na Macu Adama: lista wydarzeń w zakresie dat albo dodanie wydarzenia. Daty w formacie RRRR-MM-DDTHH:MM, czas polski.', input_schema: { type: 'object', properties: { akcja: { type: 'string', enum: ['lista', 'dodaj'] }, od: { type: 'string' }, do: { type: 'string' }, tytul: { type: 'string' }, start: { type: 'string' }, koniec: { type: 'string' }, miejsce: { type: 'string' } }, required: ['akcja'] } },
+  { name: 'zlec_claude', description: 'Zleca zadanie Claude\'owi na Macu Adama (Claude Code z dostępem do Gmaila asmedia.film@gmail.com, internetu i plików do odczytu). Do: sprawdzania i streszczania maili, przygotowania odpowiedzi na maila jako szkic w Gmailu (tryb szkic), większych wyszukiwań i porównań, przejrzenia plików. Wraca od razu, wynik przyjdzie sam. Maili nie wysyła: szkic czeka w wersjach roboczych, Adam wysyła go sam.', input_schema: { type: 'object', properties: { tytul: { type: 'string', description: 'Krótki tytuł, 2–5 słów.' }, zadanie: { type: 'string', description: 'Pełne polecenie z kontekstem z rozmowy, po polsku.' }, tryb: { type: 'string', enum: ['czytaj', 'szkic'], description: 'szkic tylko gdy trzeba przygotować odpowiedź na maila.' }, sesja: { type: 'string', description: 'Opcjonalnie id sesji z listy ostatnich zleceń, gdy to ciąg dalszy (np. poprawka szkicu).' } }, required: ['tytul', 'zadanie'] } }
 ];
 function toolList(fg) {
-  const t = TOOL_DEFS.filter(d => fg || d.name !== 'zlec_w_tle').map(d => ({ ...d }));
+  const t = TOOL_DEFS.filter(d => fg || !['zlec_w_tle', 'minutnik', 'budzik', 'usun_alarm'].includes(d.name)).map(d => ({ ...d }));
+  if (fg && macOn()) for (const d of MAC_TOOLS) t.push({ ...d });
   if (webOn()) t.push(WEB_TOOL());
   return t;
 }
@@ -1169,7 +1211,33 @@ const EXEC = {
   },
   odhacz_zadanie: inp => { const t = S.tasks.find(x => x.id === String(inp.id || '')); if (!t) throw new Error('Nie ma zadania o takim id.'); t.done = true; t.doneAt = Date.now(); trimTasks(); persist('tasks'); renderSheet(); renderBadge(); note(`Zrobione: ${t.text}`); return 'Odhaczono.'; },
   usun_zadanie: inp => { const id = String(inp.id || ''); const t = S.tasks.find(x => x.id === id); if (!t) throw new Error('Nie ma zadania o takim id.'); S.tasks = S.tasks.filter(x => x.id !== id); persist('tasks'); renderSheet(); renderBadge(); note(`Usunięto z listy: ${t.text}`); return 'Usunięto.'; },
-  zlec_w_tle: inp => startJob(inp)
+  zlec_w_tle: inp => startJob(inp),
+  minutnik: inp => {
+    const sec = Math.round((Number(inp.minuty) || 0) * 60 + (Number(inp.sekundy) || 0));
+    if (!(sec > 0) || sec > 86400) throw new Error('Podaj czas od 1 sekundy do 24 godzin.');
+    const t = addTimer('minutnik', Date.now() + sec * 1000, inp.nazwa);
+    note(`Minutnik${t.label ? ' „' + t.label + '”' : ''}: ${leftText(t.at)}, dzwoni o ${hhmmss(t.at)}`);
+    return { id: t.id, dzwoni_o: hhmmss(t.at) };
+  },
+  budzik: inp => {
+    const d = parseDue(inp.godzina); if (!d) throw new Error('Nieczytelna godzina. Użyj formatu RRRR-MM-DDTHH:MM.');
+    if (d.getTime() <= Date.now()) throw new Error('Ta godzina już minęła.');
+    const t = addTimer('budzik', d.getTime(), inp.nazwa);
+    note(`Budzik${t.label ? ' „' + t.label + '”' : ''}: ${fmtDue(isoLocal(d))}`);
+    return { id: t.id, dzwoni: isoLocal(d) };
+  },
+  usun_alarm: inp => {
+    const id = String(inp.id || '');
+    const before = S.timers.filter(t => !t.fired).length;
+    S.timers = id === 'wszystkie' ? S.timers.filter(t => t.fired) : S.timers.filter(t => t.id !== id);
+    persist('timers'); stopRinging();
+    const n = before - S.timers.filter(t => !t.fired).length;
+    if (!n) throw new Error('Nie ma takiego minutnika ani budzika.');
+    note(n > 1 ? `Skasowane alarmy: ${n}` : 'Skasowany alarm'); return `Skasowano: ${n}.`;
+  },
+  mac: async inp => { const r = await helperCall('/mac', inp); if (inp.akcja === 'znajdz_plik') return { pliki: r.pliki || [] }; note(r.wynik || 'Zrobione na Macu'); return r.wynik || 'Zrobione.'; },
+  kalendarz: async inp => { const r = await helperCall('/kalendarz', inp, 40000); if (inp.akcja === 'dodaj') { note(r.wynik || 'Dodane do kalendarza'); return r.wynik; } return { od: r.od, do: r.do, wydarzenia: r.wydarzenia || [] }; },
+  zlec_claude: inp => startClaudeJob(inp)
 };
 async function runTools(content) {
   const out = [];
@@ -1184,6 +1252,221 @@ async function runTools(content) {
   }
   return out;
 }
+
+/* ================= pomocnik na Macu ================= */
+const HELPER = 'http://127.0.0.1:47811';
+rt.mac = null;
+function macOn() { return !!(rt.mac && rt.mac.ok); }
+async function helperCall(path, body, timeoutMs = 20000) {
+  const ac = new AbortController(); const to = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const r = await fetch(HELPER + path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-jarvis': '1' }, body: body ? JSON.stringify(body) : undefined, signal: ac.signal, targetAddressSpace: 'loopback' });
+    const j = await r.json().catch(() => null);
+    if (!j) throw new Error(`pomocnik na Macu odpowiedział błędem ${r.status}`);
+    if (!j.ok) throw new Error(j.blad || 'błąd pomocnika na Macu');
+    return j;
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw new Error('pomocnik na Macu nie odpowiada');
+    if (e instanceof TypeError) { rt.mac = { ok: false }; renderTelemetry(); throw new Error('pomocnik na Macu nie działa; uruchom Jarvisa ikoną na pulpicie'); }
+    throw e;
+  } finally { clearTimeout(to); }
+}
+let macChecking = false;
+async function checkMac() {
+  if (IS_IOS || macChecking || dormant) return;
+  macChecking = true;
+  try { const j = await helperCall('/ping', null, 2500); rt.mac = { ok: true, claude: !!j.claude, poczta: j.poczta, wersja: j.wersja }; }
+  catch (e) { rt.mac = { ok: false }; }
+  finally { macChecking = false; renderTelemetry(); renderMacInfo(); }
+}
+function renderMacInfo() {
+  const box = $('#mac-info'); if (!box) return;
+  box.textContent = IS_IOS ? 'Na iPhonie Jarvis działa sam; Mac steruje się z Jarvisa na Macu.' : !rt.mac ? 'Sprawdzam pomocnika na Macu…' : !rt.mac.ok ? 'Pomocnik na Macu nie działa. Uruchom Jarvisa ikoną na pulpicie.' : `Pomocnik na Macu działa. Claude na Macu: ${rt.mac.claude ? 'jest' : 'nie znaleziony'}. Poczta asmedia.film: ${rt.mac.poczta === true || rt.mac.poczta === 'true' ? 'podłączona' : rt.mac.poczta === 'sprawdzam' ? 'sprawdzam' : 'niedostępna w Claude na Macu'}.`;
+}
+function macRules() {
+  if (!macOn()) return `- ${IS_IOS ? 'Na telefonie nie masz dostępu do Maca, maila ani kalendarza; to działa w Jarvisie na Macu.' : 'Pomocnik na Macu teraz nie działa, więc nie sterujesz Makiem, mailem ani kalendarzem; powiedz, żeby uruchomił Jarvisa ikoną na pulpicie.'} Jeśli o to poprosi, powiedz to jednym zdaniem.`;
+  return `- Na Macu działa pomocnik. Narzędziem mac otwierasz programy (np. Premiere Pro), strony i pliki, szukasz plików, zmieniasz głośność i muzykę. Narzędziem kalendarz czytasz i dodajesz wydarzenia w Kalendarzu na Macu.
+- Narzędziem zlec_claude zlecasz zadania Claude'owi na Macu: maile ze skrzynki asmedia.film@gmail.com (sprawdź, streść, przygotuj odpowiedź jako szkic w trybie szkic), większe wyszukiwania i porównania, przejrzenie plików. Powiedz krótko, że Claude się tym zajmuje. Maili nie wysyłasz: szkic czeka w Gmailu w wersjach roboczych i Adam wysyła go sam.
+- Gdy prosi o coś, czego nie umiesz zrobić od razu, a da się to zrobić przez Claude'a na Macu, zleć to narzędziem zlec_claude zamiast odmawiać.`;
+}
+function startClaudeJob(inp) {
+  if (!macOn()) throw new Error('Pomocnik na Macu nie działa.');
+  const running = S.jobs.filter(j => j.status === 'running' && jobCtls.has(j.id)).length;
+  if (running >= 2) throw new Error('W tle pracują już dwa zadania. Poczekaj, aż któreś się skończy.');
+  const job = { id: rid('j'), kind: 'claude', title: String(inp.tytul || 'Zadanie').trim().slice(0, 80), task: String(inp.zadanie || '').trim().slice(0, 5000), tryb: inp.tryb === 'szkic' ? 'szkic' : 'czytaj', sesja: /^[A-Za-z0-9-]{8,80}$/.test(String(inp.sesja || '')) ? String(inp.sesja) : '', status: 'running', at: Date.now() };
+  S.jobs.unshift(job); S.jobs = S.jobs.slice(0, 12); persist('jobs'); renderSheet(); renderTelemetry();
+  note(`Zlecone Claude'owi na Macu: ${job.title}`);
+  runClaudeJob(job);
+  return `Przyjęte. Claude na Macu zajmuje się zadaniem „${job.title}”; wynik przyjdzie sam.`;
+}
+async function runClaudeJob(job) {
+  const ctl = new AbortController(); jobCtls.set(job.id, ctl);
+  const patch = p => { const cur = S.jobs.find(x => x.id === job.id); if (cur) Object.assign(cur, p); };
+  const s = S.settings;
+  const recent = historyMessages().slice(-4).map(t => `${t.role === 'user' ? s.user : s.name}: ${String(t.content).slice(0, 500)}`).join('\n');
+  const zadanie = `${job.task}\n\nKontekst ostatniej rozmowy z Jarvisem:\n${recent || '(brak)'}\nTeraz: ${nowLine()}.`;
+  try {
+    const r = await helperCall('/claude', { zadanie, tryb: job.tryb, sesja: job.sesja || undefined }, 300000);
+    const result = tidy(r.wynik || '').slice(0, 4000) || 'Zrobione.';
+    patch({ status: 'done', result, sesja: r.sesja || job.sesja, doneAt: Date.now() });
+    addTurn({ role: 'assistant', kind: 'job', title: job.title, content: result });
+    speaker.say(`${job.tryb === 'szkic' ? 'Szkic gotowy' : 'Gotowe'}: ${job.title}. ${firstSentences(result, 2)}${job.tryb === 'szkic' ? ' Szkic czeka w Gmailu w wersjach roboczych.' : ''}`);
+  } catch (e) {
+    patch({ status: 'failed', error: String(e.message || e) });
+    note(`Claude na Macu nie dał rady: ${job.title}. ${e.message || e}`);
+    speaker.say(`Nie udało się: ${job.title}. ${String(e.message || '').slice(0, 120)}`);
+  } finally { jobCtls.delete(job.id); persist('jobs'); renderSheet(); renderTelemetry(); }
+}
+
+/* ================= minutniki i budziki ================= */
+const hhmmss = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}${d.getSeconds() ? ':' + pad(d.getSeconds()) : ''}`; };
+function leftText(ms) {
+  const s = Math.max(0, Math.round((ms - Date.now()) / 1000));
+  if (s < 60) return `${s} s`;
+  const m = Math.round(s / 60); if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+function addTimer(kind, at, label) {
+  const t = { id: rid('a'), kind, at, label: String(label || '').trim().slice(0, 60), fired: false };
+  S.timers.push(t); S.timers = S.timers.filter(x => !x.fired || Date.now() - x.at < 3600000).slice(-30);
+  persist('timers'); return t;
+}
+rt.ringing = null;
+function alarmTone() {
+  const c = audio.ctx; if (!c || c.state !== 'running') return;
+  try {
+    const t0 = c.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const o = c.createOscillator(), g = c.createGain(), t = t0 + i * 0.28;
+      o.type = 'square'; o.frequency.setValueAtTime(880, t);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.22);
+    }
+    if (rt.listener && rt.listener.ignoreFor) rt.listener.ignoreFor(900);
+  } catch (e) { /* ignore */ }
+}
+function ring(t) {
+  const s = S.settings;
+  const line = t.kind === 'budzik' ? `${s.user}, ${t.label ? t.label + '.' : 'pobudka, budzik.'}` : `${s.user}, minął minutnik${t.label ? ': ' + t.label : ''}.`;
+  note(t.kind === 'budzik' ? `Budzik${t.label ? ': ' + t.label : ''}` : `Minął minutnik${t.label ? ': ' + t.label : ''}`);
+  if (!rt.started) return;
+  stopRinging();
+  const r = { t, line, n: 0, until: Date.now() + 90000 };
+  rt.ringing = r; rt.awakeUntil = r.until;
+  const step = () => {
+    if (rt.ringing !== r) return;
+    if (Date.now() > r.until) { stopRinging(); return; }
+    if (!speaker.active) { if (r.n % 4 === 0) speaker.say(line); else alarmTone(); r.n++; }
+    r.timer = setTimeout(step, 3500);
+  };
+  showBanner(`${line} Powiedz cokolwiek albo stuknij kulę, żeby wyłączyć.`);
+  step();
+}
+function stopRinging() { const r = rt.ringing; if (!r) return false; clearTimeout(r.timer); rt.ringing = null; hideBanner(); return true; }
+function checkAlarms() {
+  const now = Date.now(); let changed = false;
+  for (const t of S.timers) {
+    if (t.fired || t.at > now) continue;
+    t.fired = true; changed = true;
+    if (now - t.at < 120000) ring(t); else note(`${t.kind === 'budzik' ? 'Budzik' : 'Minutnik'}${t.label ? ' „' + t.label + '”' : ''} minął, gdy Jarvis był zamknięty.`);
+  }
+  if (changed) persist('timers');
+}
+
+/* ================= bieżące wiadomości ================= */
+let newsBusy = false;
+async function refreshNews(force) {
+  if (newsBusy || !rt.started || dormant || !webOn() || !S.settings.apiKey) return;
+  if (!force && S.news && Date.now() - S.news.at < 4 * 3600000) return;
+  newsBusy = true;
+  try {
+    const msgs = [{ role: 'user', content: `Teraz: ${nowLine()}. Zbierz w internecie 10 najważniejszych wiadomości z ostatniej doby dla mieszkańca Polski: Polska, świat, gospodarka, technologia i AI, sport (szczególnie polska piłka: reprezentacja, Ekstraklasa, Ekstraliga kobiet). Każda w jednym zdaniu, po polsku, z najważniejszym konkretem. Same zdania, każde w nowej linii, bez numerów, linków i źródeł.` }];
+    let text = '';
+    for (let round = 0; round < 4; round++) {
+      const r = await claudeCall('fast', { system: 'Jesteś redaktorem krótkich serwisów informacyjnych. Piszesz zwięźle i rzetelnie, tylko na podstawie wyszukanych źródeł.', messages: msgs, tools: [WEB_TOOL()], maxTokens: 1200 });
+      text += r.content.filter(b => b.type === 'text').map(b => b.text).join('');
+      if (r.stop === 'pause_turn') { msgs.push({ role: 'assistant', content: r.content }); continue; }
+      break;
+    }
+    text = tidy(text).split('\n').map(l => l.replace(/^[-–•\d.)\s]+/, '').trim()).filter(l => l.length > 25).slice(0, 12).join('\n');
+    if (text) { S.news = { at: Date.now(), text }; persist('news'); }
+  } catch (e) { /* spróbujemy później */ }
+  finally { newsBusy = false; }
+}
+
+/* ================= iPhone: przeniesienie kodem QR ================= */
+const PAIR_KEYS = ['apiKey', 'workspaceId', 'elKey', 'elVoice', 'elOk', 'tts', 'voiceSkip', 'name', 'user', 'gender', 'persona', 'about', 'city', 'brain', 'webSearch', 'mode', 'followUp', 'rate', 'kolega', 'voiceMigrated', 'greeted'];
+function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Nie udało się pobrać biblioteki.')); document.head.appendChild(s); }); }
+function pairPayload() {
+  const s = {}; for (const k of PAIR_KEYS) s[k] = S.settings[k];
+  const p = { v: 1, s, m: [], t: S.tasks.filter(t => !t.done).slice(-8).map(t => [t.text, t.due || '']) };
+  for (const m of S.memory.slice().reverse()) { p.m.push(m.text); if (JSON.stringify(p).replace(/[\u0080-\uffff]/g, '______').length > 1500) { p.m.pop(); break; } }
+  // Tylko znaki ASCII: polskie litery jako \uXXXX, żeby kod QR czytał się tak samo na każdym telefonie.
+  return 'JARVIS1:' + JSON.stringify(p).replace(/[\u0080-\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+}
+let pairTimer = 0;
+async function showPair() {
+  const box = $('#pair-qr'); box.textContent = 'Przygotowuję kod…'; $('#pairov').hidden = false;
+  try {
+    if (!window.qrcode) await loadScript('https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js');
+    const qr = window.qrcode(0, 'L'); qr.addData(pairPayload(), 'Byte'); qr.make();
+    box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  } catch (e) { box.textContent = 'Nie udało się zrobić kodu: ' + e.message; }
+  clearTimeout(pairTimer); pairTimer = setTimeout(hidePair, 120000);
+}
+function hidePair() { clearTimeout(pairTimer); $('#pairov').hidden = true; $('#pair-qr').textContent = ''; }
+function applyPair(text) {
+  if (!String(text).startsWith('JARVIS1:')) return false;
+  let p; try { p = JSON.parse(String(text).slice(8)); } catch (e) { return false; }
+  if (!p || !p.s || typeof p.s !== 'object') return false;
+  const next = { ...S.settings }; for (const k of PAIR_KEYS) if (k in p.s) next[k] = p.s[k];
+  S.settings = cleanSettings(next); saveNow();
+  const have = new Set(S.memory.map(m => m.text));
+  for (const t of (Array.isArray(p.m) ? p.m : []).slice().reverse()) if (typeof t === 'string' && !have.has(t) && S.memory.length < 200) S.memory.push({ id: rid('m'), text: t.slice(0, 300), at: Date.now() });
+  persist('memory');
+  const tasks = new Set(S.tasks.map(t => t.text));
+  for (const [text, due] of (Array.isArray(p.t) ? p.t : [])) if (typeof text === 'string' && !tasks.has(text)) S.tasks.push({ id: rid('t'), text: text.slice(0, 200), due: due || null, done: false, notified: false, at: Date.now() });
+  persist('tasks');
+  return true;
+}
+let scanStream = null, scanRaf = 0;
+async function startScan() {
+  $('#scanov').hidden = false; const msg = $('#scan-msg'); msg.textContent = 'Uruchamiam aparat…';
+  audio.unlock();
+  try {
+    if (!window.jsQR) await loadScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js');
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+  } catch (e) { msg.textContent = 'Nie mam dostępu do aparatu: ' + (e.message || e); return; }
+  const v = $('#scan-video'); v.srcObject = scanStream; try { await v.play(); } catch (e) { /* ignore */ }
+  msg.textContent = 'Skieruj aparat na kod na ekranie Maca.';
+  const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+  const tick = () => {
+    if (!scanStream) return;
+    if (v.readyState >= 2 && v.videoWidth) {
+      const w = Math.min(720, v.videoWidth), hgt = Math.round(v.videoHeight * w / v.videoWidth);
+      cv.width = w; cv.height = hgt; cx.drawImage(v, 0, 0, w, hgt);
+      const code = window.jsQR(cx.getImageData(0, 0, w, hgt).data, w, hgt, { inversionAttempts: 'dontInvert' });
+      if (code && code.data) {
+        if (applyPair(code.data)) { stopScan(); pairDone(); return; }
+        msg.textContent = 'To nie jest kod Jarvisa. Na Macu: Ustawienia → Przenieś na iPhone\'a.';
+      }
+    }
+    scanRaf = requestAnimationFrame(tick);
+  };
+  scanRaf = requestAnimationFrame(tick);
+}
+function stopScan() { cancelAnimationFrame(scanRaf); if (scanStream) { for (const t of scanStream.getTracks()) t.stop(); scanStream = null; } $('#scanov').hidden = true; }
+function pairDone() {
+  $('#setup').hidden = true; closeVoiceKey(); if (!$('#sheet').hidden) closeSheet();
+  renderAll();
+  if (!rt.started) begin(true);
+  speaker.stop(); speaker.warned = false; speaker.say(`Gotowe, ${S.settings.user}. Mam wszystko z Maca.`);
+}
+$('#pair-show').addEventListener('click', showPair);
+$('#pair-close').addEventListener('click', hidePair);
+$('#pair-scan').addEventListener('click', startScan);
+$('#setup-pair').addEventListener('click', startScan);
+$('#scan-close').addEventListener('click', stopScan);
 
 /* ================= ask ================= */
 async function ask(cmd) {
@@ -1280,7 +1563,7 @@ async function runJob(job) {
 
 /* ================= reminders ================= */
 function checkReminders() {
-  if (document.visibilityState === 'hidden') return;
+  if (PAUSE_HIDDEN && document.visibilityState === 'hidden') return;
   const now = Date.now(); let changed = false;
   for (const t of S.tasks) {
     if (t.done || t.notified || !t.due) continue;
@@ -1352,6 +1635,9 @@ function renderTelemetry() {
   add(rt.engine === 'cloud' ? 'Mowa: chmura' : rt.engine === 'system' ? 'Mowa: system' : 'Mowa: brak', rt.listener && !rt.needTap ? 'on' : 'warn');
   add(speaker.useEleven() ? (rt.elError ? 'Głos: błąd ElevenLabs' : 'Głos: ElevenLabs') : 'Głos: telefon', speaker.useEleven() ? (rt.elError ? 'warn' : 'on') : undefined);
   if (S.settings.webSearch) add('Internet', rt.noWeb ? 'warn' : 'on');
+  if (!IS_IOS && rt.mac) add(rt.mac.ok ? 'Mac' : 'Mac: brak pomocnika', rt.mac.ok ? 'on' : 'warn');
+  const al = S.timers.filter(t => !t.fired).length;
+  if (al) add(al === 1 ? '1 alarm' : `${al} alarmy`, 'on');
   const jobs = S.jobs.filter(j => j.status === 'running' && jobCtls.has(j.id)).length;
   if (jobs) add(`W tle ${jobs}`, 'warn');
   $('#brand').textContent = S.settings.name;
@@ -1427,6 +1713,7 @@ function renderSettings() {
   line('Urządzenie', `${IS_IOS ? 'iPhone/iPad' : 'komputer'}${STANDALONE ? ', jako aplikacja' : ', w przeglądarce'}`);
   line('Dane', 'pamięć, lista i klucze zostają tylko na tym urządzeniu');
   line('Wersja', APP_VERSION);
+  renderMacInfo();
 }
 let elCheckSeq = 0;
 async function checkElKey() {
@@ -1491,6 +1778,7 @@ function begin(quiet) {
   audio.unlock(); speaker.unlockSys();
   rt.started = true; $('#gate').hidden = true;
   startListener();
+  setTimeout(() => refreshNews(false), 8000);
   requestWakeLock();
   renderAll();
   if (quiet === true) { S.settings.greeted = true; store('settings', S.settings); }
@@ -1714,6 +2002,7 @@ $('#stop').addEventListener('click', () => { if (rt.busy) rt.busy.abort(); speak
 $('#orb-btn').addEventListener('click', () => {
   audio.unlock();
   if (!rt.started) { if (S.settings.apiKey) begin(); else openSetup(); return; }
+  if (stopRinging()) { speaker.stop(); return; }
   if (rt.busy || speaker.active) { if (rt.busy) rt.busy.abort(); speaker.stop(); }
   rt.awakeUntil = Date.now() + S.settings.followUp * 1000; audio.chime(true); syncListen();
 });
@@ -1820,9 +2109,12 @@ function boot() {
   if (IS_IOS && !STANDALONE) $('#gate-note').innerHTML = 'Jedno stuknięcie po otwarciu, potem wystarczy mówić.<br><br><b>Dodaj Jarvisa do ekranu początkowego:</b> Udostępnij → Do ekranu początkowego.';
   setInterval(() => { if (rt.started) renderStatus(); }, 1000);
   setInterval(checkReminders, 15000);
+  setInterval(checkAlarms, 1000);
+  checkMac(); setInterval(checkMac, 60000);
+  setInterval(() => refreshNews(false), 30 * 60000);
   checkReminders();
 }
-window.__jarvis = { S, rt, speaker, onUtterance, ask, findWake };
+window.__jarvis = { S, rt, speaker, onUtterance, ask, findWake, applyPairForTest: t => { if (applyPair(t)) pairDone(); } };
 boot();
 })();
 </script>
