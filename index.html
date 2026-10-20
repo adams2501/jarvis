@@ -307,8 +307,8 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
       <div class="group">
         <h3>Głos</h3>
         <div class="field">
-          <button class="btn primary" type="button" id="butler">Ustaw styl kamerdynera</button>
-          <small>Jednym stuknięciem: spokojny męski głos z brytyjskim akcentem (George z ElevenLabs), uprzejmy charakter z suchym humorem, mówi o sobie „zrobiłem”. Głos wymaga klucza ElevenLabs.</small>
+          <button class="btn primary" type="button" id="butler">Ustaw głos Jarvisa</button>
+          <small>Jednym stuknięciem: Twój nowy głos z ElevenLabs (spokojna, naturalna polszczyzna), elegancki charakter z suchym humorem, mówi o sobie „zrobiłam”. Głos wymaga klucza ElevenLabs.</small>
         </div>
         <div class="field"><span>Kto mówi</span>
           <div class="seg" role="radiogroup" aria-label="Silnik głosu">
@@ -323,11 +323,12 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
         <label class="field"><span>Klucz ElevenLabs</span><input class="txt" id="set-elkey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Używany do głosu i do rozpoznawania"></label>
         <div class="field"><span>Głos ElevenLabs</span>
           <div class="seg" role="radiogroup" aria-label="Głos ElevenLabs">
+            <label><input type="radio" name="elv" id="set-elv-jarvis" value="INANvjweZrJaX9aLFGf3"><span>Jarvis</span></label>
             <label><input type="radio" name="elv" id="set-elv-george" value="JBFqnCBsd6RMkjVDRZzb"><span>George</span></label>
             <label><input type="radio" name="elv" id="set-elv-daniel" value="onwK4e9ZLuTAKqWW03F9"><span>Daniel</span></label>
             <label><input type="radio" name="elv" id="set-elv-sarah" value="EXAVITQu4vr4xnSDxMaL"><span>Sarah</span></label>
           </div>
-          <small>George: spokojny, ciepły, z brytyjskim akcentem. Daniel: niski, poważny, brytyjski. Sarah: damski. Inny głos z biblioteki ElevenLabs: wklej jego ID poniżej.</small>
+          <small>Jarvis: Twój głos zaprojektowany w ElevenLabs, naturalna i spokojna polszczyzna. George: męski, brytyjski akcent. Daniel: niski, poważny. Sarah: damski, angielski akcent. Inny głos z biblioteki ElevenLabs: wklej jego ID poniżej.</small>
           <div class="row2"><input class="txt" id="set-elvoice" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="ID głosu ElevenLabs"><button class="btn" type="button" id="el-test">Posłuchaj</button></div>
         </div>
         <label class="field"><span>Tempo mowy: <b id="rate-val"></b></span><input type="range" id="set-rate" min="0.8" max="1.4" step="0.05"></label>
@@ -398,7 +399,8 @@ const ICON = {
 };
 
 /* ================= state ================= */
-const DEF_VOICE = 'EXAVITQu4vr4xnSDxMaL';
+const DEF_VOICE = 'INANvjweZrJaX9aLFGf3';
+const FEMALE_VOICES = new Set(['INANvjweZrJaX9aLFGf3', 'EXAVITQu4vr4xnSDxMaL']);
 const FAST_MODELS = ['claude-haiku-5-5', 'claude-haiku-4-5'];
 const BIG_MODELS = ['claude-sonnet-5-5', 'claude-sonnet-4-5'];
 const DEFAULTS = {
@@ -1458,14 +1460,14 @@ bindRadio('mode', 'mode'); bindRadio('stt', 'stt'); bindRadio('sttp', 'sttProvid
 const GEORGE = 'JBFqnCBsd6RMkjVDRZzb';
 for (const r of document.querySelectorAll('input[name=elv]')) r.addEventListener('change', e => {
   S.settings.elVoice = e.target.value;
-  S.settings.gender = e.target.value === DEF_VOICE ? 'ona' : 'on';
+  S.settings.gender = FEMALE_VOICES.has(e.target.value) ? 'ona' : 'on';
   if (S.settings.elKey) S.settings.tts = 'eleven';
   saveNow(); renderSettings(); renderTelemetry();
 });
 $('#butler').addEventListener('click', () => {
   audio.unlock(); speaker.stop();
   const s = S.settings;
-  s.elVoice = GEORGE; s.gender = 'on'; s.persona = 'lokaj';
+  s.elVoice = DEF_VOICE; s.gender = 'ona'; s.persona = 'lokaj';
   if (s.elKey) s.tts = 'eleven';
   saveNow(); renderSettings(); renderTelemetry();
   if (s.elKey) { speaker.warned = false; speaker.say(`Do usług, ${s.user}. Tak teraz brzmię.`); }
