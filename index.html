@@ -481,7 +481,8 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '18';
+const APP_VERSION = '19';
+const QS = new URLSearchParams(location.search);
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -1283,13 +1284,14 @@ async function runTools(content) {
 }
 
 /* ================= pomocnik na Macu ================= */
-const HELPER = 'http://127.0.0.1:47811';
+const LOCAL = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
+const HELPER = LOCAL ? '' : 'http://127.0.0.1:47811';
 rt.mac = null;
 function macOn() { return !!(rt.mac && rt.mac.ok); }
 async function helperCall(path, body, timeoutMs = 20000) {
   const ac = new AbortController(); const to = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    const r = await fetch(HELPER + path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-jarvis': '1' }, body: body ? JSON.stringify(body) : undefined, signal: ac.signal, targetAddressSpace: 'loopback' });
+    const r = await fetch(HELPER + path, { method: 'POST', headers: { 'content-type': 'application/json', 'x-jarvis': '1' }, body: JSON.stringify(body || {}), signal: ac.signal, ...(LOCAL ? {} : { targetAddressSpace: 'loopback' }) });
     const j = await r.json().catch(() => null);
     if (!j) throw new Error(`pomocnik na Macu odpowiedział błędem ${r.status}`);
     if (!j.ok) throw new Error(j.blad || 'błąd pomocnika na Macu');
@@ -1316,6 +1318,7 @@ $('#mac-connect').addEventListener('click', async () => {
   audio.unlock();
   await checkMac();
   if (macOn()) { hideBanner(); speaker.say('Jestem połączona z Makiem.'); return; }
+  if (LOCAL) { showBanner('Pomocnik na Macu nie odpowiada. Otwórz Jarvisa ikoną na pulpicie, to go uruchomi.'); return; }
   const st = await lnaState();
   showBanner(st === 'denied' ? 'Chrome blokuje połączenie z Makiem. Kliknij ⋮ w prawym górnym rogu okna Jarvisa, otwórz ustawienia i zezwól na „Inne aplikacje i usługi na tym urządzeniu”.' : st === 'granted' ? 'Pomocnik na Macu nie działa. Otwórz Jarvisa ikoną na pulpicie, to go uruchomi.' : 'Kliknij „Zezwalaj”, gdy Chrome zapyta o dostęp do innych aplikacji i usług na tym urządzeniu.');
 });
@@ -1434,6 +1437,35 @@ async function refreshNews(force) {
     if (text) { S.news = { at: Date.now(), text }; persist('news'); }
   } catch (e) { /* spróbujemy później */ }
   finally { newsBusy = false; }
+}
+
+/* ================= przeniesienie z adresu github.io do pomocnika ================= */
+const OLD_ORIGIN = 'https://adams2501.github.io';
+const EXPORT_KEYS = ['settings', 'memory', 'tasks', 'chat', 'jobs', 'timers', 'news'];
+function exportToParent() {
+  const data = {}; for (const k of EXPORT_KEYS) data[k] = load(k, null);
+  const target = 'http://127.0.0.1:47811';
+  const send = () => { try { window.parent.postMessage({ t: 'jarvis-eksport', data }, target); } catch (e) { /* ignore */ } };
+  send(); setTimeout(send, 800);
+  if (chan) { try { chan.postMessage({ t: 'claim', id: INST.id, at: 9e15, born: 9e15, focus: true }); } catch (e) { /* ignore */ } }
+}
+let importDone = false;
+function importFromOld() {
+  return new Promise(resolve => {
+    const fr = document.createElement('iframe'); fr.hidden = true; fr.src = OLD_ORIGIN + '/jarvis/index.html?eksport=1';
+    const finish = ok => { if (importDone) return; importDone = true; window.removeEventListener('message', onMsg); try { fr.remove(); } catch (e) { /* ignore */ } resolve(ok); };
+    const onMsg = e => {
+      if (e.origin !== OLD_ORIGIN || !e.data || e.data.t !== 'jarvis-eksport' || !e.data.data) return;
+      const d = e.data.data;
+      if (d.settings && typeof d.settings === 'object' && d.settings.apiKey) {
+        for (const k of EXPORT_KEYS) if (d[k] != null) store(k, d[k]);
+        finish(true);
+      } else finish(false);
+    };
+    window.addEventListener('message', onMsg);
+    document.body.appendChild(fr);
+    setTimeout(() => finish(false), 9000);
+  });
 }
 
 /* ================= iPhone: przeniesienie kodem QR ================= */
@@ -2132,6 +2164,13 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
     document.addEventListener('visibilitychange', () => { if (!document.hidden) up(); });
   }).catch(() => {});
 }
+if (LOCAL) setInterval(async () => {
+  try {
+    const t = await fetch('index.html?v=' + Date.now(), { cache: 'no-store' }).then(r => r.text());
+    const m = t.match(/const APP_VERSION = '(\d+)'/);
+    if (m && m[1] !== APP_VERSION) reloadWhenIdle();
+  } catch (e) { /* bez internetu: zostajemy przy tej wersji */ }
+}, 20 * 60000);
 let reloadTimer = 0;
 function reloadWhenIdle() {
   if (reloadTimer) return;
@@ -2142,7 +2181,6 @@ function reloadWhenIdle() {
 }
 /* Instalacja jako aplikacja na Macu: zainstalowany Jarvis startuje bez stukania. */
 let installEvt = null, installFallback = false;
-const QS = new URLSearchParams(location.search);
 const INSTALL_PAGE = location.origin + location.pathname + '?zainstaluj=1';
 function renderInstall() {
   for (const b of document.querySelectorAll('.install-btn')) b.hidden = !(installEvt || (installFallback && !b.closest('#installov')));
@@ -2165,8 +2203,15 @@ if (QS.has('zainstaluj')) { $('#installov').hidden = false; renderInstall(); }
 
 function boot() {
   sizeOrb(); startOrb(); renderAll();
+  if (QS.has('eksport') && window.parent !== window) { exportToParent(); return; }
   claim();
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* ignore */ }
+  if (LOCAL && !S.settings.apiKey && !QS.has('swiezy')) {
+    $('#gate').hidden = true; $('#setup').hidden = true;
+    showBanner('Przenoszę ustawienia z poprzedniej wersji Jarvisa…');
+    importFromOld().then(ok => { if (ok) { location.replace(location.pathname + '?t=' + Date.now()); } else { hideBanner(); openSetup(); } });
+    return;
+  }
   if (!S.settings.apiKey) openSetup();
   else if (!S.settings.elKey && !S.settings.voiceSkip) openVoiceKey();
   else if (/ustawienia/.test(location.hash)) { openSheet('settings'); }
