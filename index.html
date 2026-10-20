@@ -447,7 +447,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: ''
 };
-const APP_VERSION = '11';
+const APP_VERSION = '12';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -1553,7 +1553,7 @@ async function verifyStoredVoiceKey() {
   try { await elevenTTS('Tak.'); if (S.settings.elKey === k) { s.elOk = keyFp(k); saveNow(); } }
   catch (e) {
     if (S.settings.elKey !== k) return;
-    if (/zły klucz|dostępu/.test(e.message) && !dormant) {
+    if (/zły klucz/.test(e.message) && !dormant) {
       s.elKey = ''; s.elOk = ''; saveNow();
       openVoiceKey(`Zapisany klucz ElevenLabs nie działa (${e.message}). Wklej właściwy, a Jarvis od razu zacznie mówić nowym głosem.`);
     } else speaker.warnEleven(e);
@@ -1629,23 +1629,22 @@ bindText('set-apikey', 'apiKey', 300);
 bindText('set-ws', 'workspaceId', 80);
 let elTestTimer = 0, elTested = '';
 $('#set-elkey').addEventListener('input', e => {
-  const val = pickElKey(e.target.value) || e.target.value.trim();
-  if (/^sk-ant-/.test(val)) { S.settings.elKey = ''; S.settings.tts = 'system'; saveSoon(); showBanner('To jest klucz Claude, a w to pole wklej klucz ElevenLabs (zaczyna się od „sk_”).'); return; }
-  hideBanner();
-  const had = !!S.settings.elKey; S.settings.elKey = val.slice(0, 300);
-  if (!had && S.settings.elKey) { S.settings.tts = 'eleven'; speaker.warned = false; const r = $('#set-tts-eleven'); if (r) r.checked = true; $('#sysvoice-field').hidden = true; }
-  if (S.settings.elKey.length >= 30 && S.settings.elKey !== elTested) {
+  /* Zapisany klucz zmienia się tylko na klucz, który naprawdę działa. Puste pole, autouzupełnianie albo klucz Claude go nie skasują. */
+  const raw = e.target.value.trim(), k = pickElKey(raw), st = $('#el-status');
+  if (!raw || k === S.settings.elKey) return;
+  if (!k) { if (st) { st.classList.remove('ok'); st.textContent = /sk-ant-/.test(raw) ? 'To jest klucz Claude, nie ElevenLabs. Zostawiam zapisany klucz.' : 'To nie jest klucz ElevenLabs. Zostawiam zapisany klucz.'; } return; }
+  clearTimeout(elTestTimer);
+  elTestTimer = setTimeout(async () => {
     audio.unlock();
-    clearTimeout(elTestTimer);
-    elTestTimer = setTimeout(() => {
-      elTested = S.settings.elKey;
-      const s = S.settings;
-      s.tts = 'eleven'; if (s.elVoice === 'EXAVITQu4vr4xnSDxMaL' || !s.elVoice) { s.elVoice = DEF_VOICE; s.gender = 'ona'; }
-      saveNow(); renderSettings(); renderTelemetry(); checkElKey();
-      speaker.stop(); speaker.warned = false; speaker.say(`Do usług, ${s.user}. Tak teraz brzmię.`);
-    }, 500);
-  }
-  saveSoon();
+    if (st) { st.classList.remove('ok'); st.textContent = 'Sprawdzam nowy klucz…'; }
+    const s = S.settings, prev = s.elKey; s.elKey = k;
+    try { await elevenTTS('Tak.'); }
+    catch (err) { s.elKey = prev; if (st) st.textContent = `Nowy klucz nie działa (${err.message}). Zostawiam poprzedni.`; return; }
+    s.tts = 'eleven'; s.voiceSkip = false; s.elOk = keyFp(k);
+    if (s.elVoice === 'EXAVITQu4vr4xnSDxMaL' || !s.elVoice) { s.elVoice = DEF_VOICE; s.gender = 'ona'; }
+    saveNow(); renderSettings(); renderTelemetry(); checkElKey();
+    speaker.stop(); speaker.warned = false; speaker.say(`Do usług, ${s.user}. Tak teraz brzmię.`);
+  }, 400);
 });
 bindText('set-elvoice', 'elVoice', 64, DEF_VOICE);
 bindText('set-sttkey', 'sttKey', 300);
@@ -1791,6 +1790,7 @@ for (const b of document.querySelectorAll('.install-btn')) b.addEventListener('c
 function boot() {
   sizeOrb(); startOrb(); renderAll();
   claim();
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* ignore */ }
   if (!S.settings.apiKey) openSetup();
   else if (!S.settings.elKey && !S.settings.voiceSkip) openVoiceKey();
   else if (/ustawienia/.test(location.hash)) { openSheet('settings'); }
