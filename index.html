@@ -188,6 +188,8 @@ input[type=range]{width:100%;accent-color:var(--arc)}
 textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 .info{font-size:12.5px;color:var(--faint);line-height:1.55}
 .info b{color:var(--dim);font-weight:600}
+.el-status{font-family:var(--f-mono);font-size:12px!important;color:var(--amber)!important}
+.el-status.ok{color:var(--ok)!important}
 
 @media (prefers-reduced-motion: reduce){.panel{animation:none}.pending .body:empty::after{animation:none;clip-path:none}}
 @media (max-height:640px){#orb{width:min(40vw,150px,22vh)}.brand small{display:none}}
@@ -321,7 +323,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
           <div class="row2"><select class="txt" id="set-voice"></select><button class="btn" type="button" id="voice-test">Posłuchaj</button></div>
           <small>Lepszy polski głos na iPhonie: Ustawienia → Dostępność → Treść mówiona → Głosy → Polski → pobierz „Zosia (Ulepszona)”.</small>
         </div>
-        <label class="field"><span>Klucz ElevenLabs</span><input class="txt" id="set-elkey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Używany do głosu i do rozpoznawania"></label>
+        <label class="field"><span>Klucz ElevenLabs</span><input class="txt" id="set-elkey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Używany do głosu i do rozpoznawania"><small id="el-status" class="el-status"></small></label>
         <div class="field"><span>Głos ElevenLabs</span>
           <div class="seg" role="radiogroup" aria-label="Głos ElevenLabs">
             <label><input type="radio" name="elv" id="set-elv-jarvis" value="INANvjweZrJaX9aLFGf3"><span>Jarvis</span></label>
@@ -613,7 +615,7 @@ async function elevenTTS(text, retry = true) {
   } catch (e) { clearTimeout(to); throw new Error('brak połączenia z ElevenLabs'); }
   clearTimeout(to);
   if (r.status === 429 && retry) { await sleep(700); return elevenTTS(text, false); }
-  if (!r.ok) throw new Error(r.status === 401 ? 'zły klucz ElevenLabs' : (r.status === 402 || r.status === 429) ? 'skończył się limit ElevenLabs' : `błąd ElevenLabs ${r.status}`);
+  if (!r.ok) { let detail = ''; try { const j = await r.clone().json(); detail = (j && j.detail && (j.detail.message || j.detail.status)) || ''; } catch (e) { /* ignore */ } throw new Error((r.status === 401 ? 'zły klucz ElevenLabs' : (r.status === 402 || r.status === 429) ? 'skończył się limit ElevenLabs' : r.status === 403 ? 'klucz nie ma dostępu do tej funkcji' : r.status === 404 ? 'nie ma takiego głosu na tym koncie' : `błąd ElevenLabs ${r.status}`) + (detail ? ` (${String(detail).slice(0, 80)})` : '')); }
   const c = audio.get(); if (!c) throw new Error('brak dźwięku');
   return await new Promise((res, rej) => { const p = c.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); });
 }
@@ -1370,6 +1372,26 @@ function renderSettings() {
   line('Urządzenie', `${IS_IOS ? 'iPhone/iPad' : 'komputer'}${STANDALONE ? ', jako aplikacja' : ', w przeglądarce'}`);
   line('Dane', 'pamięć, lista i klucze zostają tylko na tym urządzeniu');
 }
+let elCheckSeq = 0;
+async function checkElKey() {
+  const el = $('#el-status'); if (!el) return;
+  const k = S.settings.elKey || '';
+  const fp = k ? `${k.slice(0, 3)}… (${k.length} znaków)` : '';
+  el.classList.remove('ok');
+  if (!k) { el.textContent = 'Brak klucza ElevenLabs: mówię głosem telefonu.'; return; }
+  if (/^sk-ant-/.test(k)) { el.textContent = `To jest klucz Claude ${fp}, a nie ElevenLabs.`; return; }
+  const seq = ++elCheckSeq;
+  el.textContent = `Sprawdzam klucz ${fp}…`;
+  try {
+    await elevenTTS('Tak.');
+    if (seq !== elCheckSeq) return;
+    el.textContent = `Klucz ${fp} działa. Głos: ${S.settings.elVoice === DEF_VOICE ? 'Jarvis' : S.settings.elVoice}.`; el.classList.add('ok');
+    rt.elError = null; renderTelemetry();
+  } catch (e) {
+    if (seq !== elCheckSeq) return;
+    el.textContent = `Klucz ${fp} nie działa: ${e.message}`;
+  }
+}
 function renderVoices() {
   const sel = $('#set-voice'), vs = speaker.voices(), cur = speaker.pickVoice();
   sel.textContent = '';
@@ -1432,7 +1454,7 @@ function openSheet(tab) {
   curTab = tab || curTab; $('#sheet').hidden = false;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.tab === curTab));
   for (const p of ['tasks', 'memory', 'jobs', 'settings']) $('#pane-' + p).hidden = p !== curTab;
-  renderSheet(); if (curTab === 'settings') renderSettings();
+  renderSheet(); if (curTab === 'settings') { renderSettings(); checkElKey(); }
   syncListen();
 }
 function closeSheet() {
@@ -1474,7 +1496,7 @@ $('#set-elkey').addEventListener('input', e => {
       elTested = S.settings.elKey;
       const s = S.settings;
       s.tts = 'eleven'; if (s.elVoice === 'EXAVITQu4vr4xnSDxMaL' || !s.elVoice) { s.elVoice = DEF_VOICE; s.gender = 'ona'; }
-      saveNow(); renderSettings(); renderTelemetry();
+      saveNow(); renderSettings(); renderTelemetry(); checkElKey();
       speaker.stop(); speaker.warned = false; speaker.say(`Do usług, ${s.user}. Tak teraz brzmię.`);
     }, 500);
   }
