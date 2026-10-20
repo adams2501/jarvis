@@ -3,7 +3,7 @@
   "short_name": "Jarvis",
   "description": "Osobisty asystent głosowy po polsku",
   "lang": "pl",
-  "start_url": "./",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
