@@ -306,6 +306,10 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 
       <div class="group">
         <h3>Głos</h3>
+        <div class="field">
+          <button class="btn primary" type="button" id="butler">Ustaw styl kamerdynera</button>
+          <small>Jednym stuknięciem: spokojny męski głos z brytyjskim akcentem (George z ElevenLabs), uprzejmy charakter z suchym humorem, mówi o sobie „zrobiłem”. Głos wymaga klucza ElevenLabs.</small>
+        </div>
         <div class="field"><span>Kto mówi</span>
           <div class="seg" role="radiogroup" aria-label="Silnik głosu">
             <label><input type="radio" name="tts" id="set-tts-system" value="system"><span>Głos telefonu</span></label>
@@ -317,9 +321,14 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
           <small>Lepszy polski głos na iPhonie: Ustawienia → Dostępność → Treść mówiona → Głosy → Polski → pobierz „Zosia (Ulepszona)”.</small>
         </div>
         <label class="field"><span>Klucz ElevenLabs</span><input class="txt" id="set-elkey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Używany do głosu i do rozpoznawania"></label>
-        <div class="field"><span>Głos ElevenLabs (ID)</span>
-          <div class="row2"><input class="txt" id="set-elvoice" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn" type="button" id="el-test">Posłuchaj</button></div>
-          <small>Domyślnie Sarah. ID innego głosu skopiujesz w ElevenLabs z biblioteki głosów.</small>
+        <div class="field"><span>Głos ElevenLabs</span>
+          <div class="seg" role="radiogroup" aria-label="Głos ElevenLabs">
+            <label><input type="radio" name="elv" id="set-elv-george" value="JBFqnCBsd6RMkjVDRZzb"><span>George</span></label>
+            <label><input type="radio" name="elv" id="set-elv-daniel" value="onwK4e9ZLuTAKqWW03F9"><span>Daniel</span></label>
+            <label><input type="radio" name="elv" id="set-elv-sarah" value="EXAVITQu4vr4xnSDxMaL"><span>Sarah</span></label>
+          </div>
+          <small>George: spokojny, ciepły, z brytyjskim akcentem. Daniel: niski, poważny, brytyjski. Sarah: damski. Inny głos z biblioteki ElevenLabs: wklej jego ID poniżej.</small>
+          <div class="row2"><input class="txt" id="set-elvoice" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="ID głosu ElevenLabs"><button class="btn" type="button" id="el-test">Posłuchaj</button></div>
         </div>
         <label class="field"><span>Tempo mowy: <b id="rate-val"></b></span><input type="range" id="set-rate" min="0.8" max="1.4" step="0.05"></label>
       </div>
@@ -1336,6 +1345,7 @@ function renderSettings() {
   const radio = (n, v) => { const e = $(`#set-${n}-${v}`); if (e) e.checked = true; };
   radio('mode', s.mode); radio('stt', s.stt); radio('sttp', s.sttProvider); radio('tts', s.tts); radio('gender', s.gender); radio('persona', s.persona); radio('brain', s.brain);
   $('#set-web').checked = !!s.webSearch;
+  for (const r of document.querySelectorAll('input[name=elv]')) r.checked = r.value === s.elVoice;
   $('#mode-help').textContent = s.mode === 'always' ? 'Każde zdanie trafia do Jarvisa. Przy włączonym telewizorze lepiej „Na hasło”.' : `Reaguje tylko na zdania ze słowem „${s.name}”. Rozmowy obok i telewizor ignoruje.`;
   $('#sttkey-field').hidden = s.sttProvider === 'eleven';
   $('#sttkey-label').textContent = s.sttProvider === 'openai' ? 'Klucz OpenAI' : 'Klucz Groq (darmowe konto na console.groq.com)';
@@ -1445,6 +1455,22 @@ bindText('set-sttkey', 'sttKey', 300);
 $('#set-about').addEventListener('input', e => { S.settings.about = e.target.value.slice(0, 800); saveSoon(); });
 const bindRadio = (name, key) => { for (const r of document.querySelectorAll(`input[name=${name}]`)) r.addEventListener('change', e => { S.settings[key] = e.target.value; saveNow(); renderSettings(); renderTelemetry(); renderStatus(); }); };
 bindRadio('mode', 'mode'); bindRadio('stt', 'stt'); bindRadio('sttp', 'sttProvider'); bindRadio('tts', 'tts'); bindRadio('gender', 'gender'); bindRadio('persona', 'persona'); bindRadio('brain', 'brain');
+const GEORGE = 'JBFqnCBsd6RMkjVDRZzb';
+for (const r of document.querySelectorAll('input[name=elv]')) r.addEventListener('change', e => {
+  S.settings.elVoice = e.target.value;
+  S.settings.gender = e.target.value === DEF_VOICE ? 'ona' : 'on';
+  if (S.settings.elKey) S.settings.tts = 'eleven';
+  saveNow(); renderSettings(); renderTelemetry();
+});
+$('#butler').addEventListener('click', () => {
+  audio.unlock(); speaker.stop();
+  const s = S.settings;
+  s.elVoice = GEORGE; s.gender = 'on'; s.persona = 'lokaj';
+  if (s.elKey) s.tts = 'eleven';
+  saveNow(); renderSettings(); renderTelemetry();
+  if (s.elKey) { speaker.warned = false; speaker.say(`Do usług, ${s.user}. Tak teraz brzmię.`); }
+  else showBanner('Charakter ustawiony. Żeby mówił tym głosem, wklej jeszcze klucz ElevenLabs w polu niżej.');
+});
 $('#set-web').addEventListener('change', e => { S.settings.webSearch = e.target.checked; if (e.target.checked) rt.noWeb = false; saveNow(); renderTelemetry(); });
 $('#set-rate').addEventListener('input', e => { S.settings.rate = clamp(Number(e.target.value) || 1, 0.8, 1.4); $('#rate-val').textContent = `${S.settings.rate.toFixed(2).replace('.', ',')}×`; saveSoon(); });
 $('#set-followup').addEventListener('input', e => { S.settings.followUp = clamp(Number(e.target.value) || 15, 5, 40); $('#fu-val').textContent = `${S.settings.followUp} s`; saveSoon(); });
