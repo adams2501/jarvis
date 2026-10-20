@@ -564,6 +564,7 @@ const speaker = {
     else this.sys(item.text, done);
   },
   playBuf(b, done) {
+    if (rt.elError) { rt.elError = null; renderTelemetry(); }
     const c = audio.get();
     let s = null, to = 0, fin = false;
     const f = () => { if (fin) return; fin = true; clearTimeout(to); if (this.src === s) this.src = null; done(); };
@@ -597,7 +598,7 @@ const speaker = {
     this.setActive(false);
   },
   unlockSys() { if (!this.sysOk) return; try { const u = new SpeechSynthesisUtterance('.'); u.volume = 0; u.rate = 2; u.lang = 'pl-PL'; speechSynthesis.speak(u); } catch (e) { /* ignore */ } },
-  warnEleven(err) { if (this.warned) return; this.warned = true; showBanner(`Głos ElevenLabs nie działa: ${(err && err.message) || 'brak odpowiedzi'}. Mówię głosem telefonu.`); }
+  warnEleven(err) { rt.elError = (err && err.message) || 'brak odpowiedzi'; renderTelemetry(); if (this.warned) return; this.warned = true; showBanner(`Głos ElevenLabs nie działa: ${rt.elError}. Mówię głosem telefonu. Sprawdź klucz ElevenLabs w ustawieniach.`); }
 };
 async function elevenTTS(text, retry = true) {
   const s = S.settings;
@@ -1292,7 +1293,7 @@ function renderTelemetry() {
   add(S.settings.brain === 'smart' ? 'Mądrzejszy' : 'Najszybszy');
   if (rt.latency != null) add(`${(rt.latency / 1000).toFixed(1).replace('.', ',')} s`);
   add(rt.engine === 'cloud' ? 'Mowa: chmura' : rt.engine === 'system' ? 'Mowa: system' : 'Mowa: brak', rt.listener && !rt.needTap ? 'on' : 'warn');
-  add(speaker.useEleven() ? 'Głos: ElevenLabs' : 'Głos: telefon');
+  add(speaker.useEleven() ? (rt.elError ? 'Głos: błąd ElevenLabs' : 'Głos: ElevenLabs') : 'Głos: telefon', speaker.useEleven() ? (rt.elError ? 'warn' : 'on') : undefined);
   if (S.settings.webSearch) add('Internet', rt.noWeb ? 'warn' : 'on');
   const jobs = S.jobs.filter(j => j.status === 'running' && jobCtls.has(j.id)).length;
   if (jobs) add(`W tle ${jobs}`, 'warn');
@@ -1461,7 +1462,10 @@ bindText('set-apikey', 'apiKey', 300);
 bindText('set-ws', 'workspaceId', 80);
 let elTestTimer = 0, elTested = '';
 $('#set-elkey').addEventListener('input', e => {
-  const had = !!S.settings.elKey; S.settings.elKey = e.target.value.trim().slice(0, 300);
+  const val = e.target.value.trim();
+  if (/^sk-ant-/.test(val)) { S.settings.elKey = ''; S.settings.tts = 'system'; saveSoon(); showBanner('To jest klucz Claude, a w to pole wklej klucz ElevenLabs (zaczyna się od „sk_”).'); return; }
+  hideBanner();
+  const had = !!S.settings.elKey; S.settings.elKey = val.slice(0, 300);
   if (!had && S.settings.elKey) { S.settings.tts = 'eleven'; speaker.warned = false; const r = $('#set-tts-eleven'); if (r) r.checked = true; $('#sysvoice-field').hidden = true; }
   if (S.settings.elKey.length >= 30 && S.settings.elKey !== elTested) {
     audio.unlock();
@@ -1608,7 +1612,7 @@ function boot() {
   if (!S.settings.apiKey) openSetup();
   else if (/ustawienia|glos/.test(location.hash)) {
     openSheet('settings');
-    setTimeout(() => { const f = $('#set-elkey'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } }, 350);
+    setTimeout(() => { const f = $('#set-elkey'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); f.select(); } }, 350);
   } else $('#gate').hidden = false;
   if (IS_IOS && !STANDALONE) $('#gate-note').innerHTML = 'Jedno stuknięcie po otwarciu, potem wystarczy mówić.<br><br><b>Dodaj Jarvisa do ekranu początkowego:</b> Udostępnij → Do ekranu początkowego.';
   setInterval(() => { if (rt.started) renderStatus(); }, 1000);
