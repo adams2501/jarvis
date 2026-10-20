@@ -482,7 +482,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '22';
+const APP_VERSION = '23';
 const QS = new URLSearchParams(location.search);
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
@@ -1355,7 +1355,8 @@ async function runClaudeJob(job) {
   const patch = p => { const cur = S.jobs.find(x => x.id === job.id); if (cur) Object.assign(cur, p); };
   const s = S.settings;
   const recent = historyMessages().slice(-4).map(t => `${t.role === 'user' ? s.user : s.name}: ${String(t.content).slice(0, 500)}`).join('\n');
-  const zadanie = `${job.task}\n\nKontekst ostatniej rozmowy z Jarvisem:\n${recent || '(brak)'}\nTeraz: ${nowLine()}.`;
+  const known = S.memory.map(m => `- ${m.text}`).join('\n').slice(0, 6000);
+  const zadanie = `${job.task}\n\nKontekst ostatniej rozmowy z Jarvisem:\n${recent || '(brak)'}\n\nCo wiadomo o Adamie (pamięć Jarvisa):\n${known || '(pusto)'}\n\nTeraz: ${nowLine()}.`;
   try {
     const r = await helperCall('/claude', { zadanie, tryb: job.tryb, sesja: job.sesja || undefined }, 300000);
     const result = tidy(r.wynik || '').slice(0, 4000) || 'Zrobione.';
