@@ -215,6 +215,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
   <header class="top">
     <div class="brand"><b id="brand">Jarvis</b><small id="mode-label">Na hasło</small></div>
     <div class="top-actions">
+      <button class="pill-btn accent" id="mac-connect" type="button" hidden aria-label="Połącz Jarvisa z Makiem"><span>Połącz z Makiem</span></button>
       <button class="pill-btn accent install-btn" type="button" hidden aria-label="Zainstaluj Jarvisa na Macu, żeby startował bez stukania"><span>Zainstaluj</span></button>
       <button class="pill-btn" id="open-tasks" type="button" aria-label="Zadania i pamięć">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>
@@ -480,7 +481,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '16';
+const APP_VERSION = '17';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -1288,8 +1289,20 @@ async function checkMac() {
   macChecking = true;
   try { const j = await helperCall('/ping', null, 2500); rt.mac = { ok: true, claude: !!j.claude, poczta: j.poczta, wersja: j.wersja }; }
   catch (e) { rt.mac = { ok: false }; }
-  finally { macChecking = false; renderTelemetry(); renderMacInfo(); }
+  finally { macChecking = false; renderTelemetry(); renderMacInfo(); $('#mac-connect').hidden = IS_IOS || !rt.mac || rt.mac.ok || dormant; }
 }
+async function lnaState() {
+  for (const name of ['local-network-access', 'loopback-network', 'local-network']) { try { return (await navigator.permissions.query({ name })).state; } catch (e) { /* inna nazwa w tej wersji Chrome */ } }
+  return 'unknown';
+}
+$('#mac-connect').addEventListener('click', async () => {
+  audio.unlock();
+  await checkMac();
+  if (macOn()) { hideBanner(); speaker.say('Jestem połączona z Makiem.'); return; }
+  const st = await lnaState();
+  showBanner(st === 'denied' ? 'Chrome blokuje połączenie z Makiem. Kliknij ⋮ w prawym górnym rogu okna Jarvisa, otwórz ustawienia i zezwól na „Inne aplikacje i usługi na tym urządzeniu”.' : st === 'granted' ? 'Pomocnik na Macu nie działa. Otwórz Jarvisa ikoną na pulpicie, to go uruchomi.' : 'Kliknij „Zezwalaj”, gdy Chrome zapyta o dostęp do innych aplikacji i usług na tym urządzeniu.');
+});
+window.addEventListener('focus', () => { if (!macOn()) checkMac(); });
 function renderMacInfo() {
   const box = $('#mac-info'); if (!box) return;
   box.textContent = IS_IOS ? 'Na iPhonie Jarvis działa sam; Mac steruje się z Jarvisa na Macu.' : !rt.mac ? 'Sprawdzam pomocnika na Macu…' : !rt.mac.ok ? 'Pomocnik na Macu nie działa. Uruchom Jarvisa ikoną na pulpicie.' : `Pomocnik na Macu działa. Claude na Macu: ${rt.mac.claude ? 'jest' : 'nie znaleziony'}. Poczta asmedia.film: ${rt.mac.poczta === true || rt.mac.poczta === 'true' ? 'podłączona' : rt.mac.poczta === 'sprawdzam' ? 'sprawdzam' : 'niedostępna w Claude na Macu'}.`;
