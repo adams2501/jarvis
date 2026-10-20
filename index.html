@@ -193,6 +193,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 .pad{border:1.5px dashed var(--arc);border-radius:18px;padding:26px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;background:rgba(142,230,255,.05)}
 .pad kbd{font-family:var(--f-display);font-size:34px;font-weight:600;letter-spacing:.08em;color:var(--arc)}
 .pad .txt{max-width:340px;text-align:center}
+.mask{-webkit-text-security:disc;text-security:disc}
 .msg{font-size:14px;min-height:1.3em;color:var(--amber)}
 .msg.ok{color:var(--ok)}
 #dormant{z-index:80;background:var(--ground)}
@@ -253,7 +254,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
       <li>W Billing doładuj konto (minimum 5 $). Szybki model kosztuje ułamek centa za odpowiedź.</li>
       <li>W API Keys kliknij Create key. W polu <b>Workspace</b> wybierz <b>Default</b>, ważność ustaw na <b>Never</b> (albo najdłuższą), skopiuj klucz i wklej go poniżej.</li>
     </ol>
-    <label class="field"><span>Klucz Claude API</span><input class="txt" id="setup-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…"></label>
+    <label class="field"><span>Klucz Claude API</span><input class="txt mask" id="setup-key" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore autocapitalize="off" spellcheck="false" placeholder="sk-ant-…"></label>
     <label class="field" id="setup-ws-field" hidden><span>ID workspace</span><input class="txt" id="setup-ws" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="wrkspc_…"><small>Potrzebne tylko dla klucza bez wybranego workspace. Znajdziesz je w Claude Console: Settings → Workspaces → kolumna ID przy „Default”.</small></label>
     <div class="row2"><button class="btn primary" id="setup-save" type="button">Zapisz i sprawdź</button></div>
     <div class="err" id="setup-err" role="alert"></div>
@@ -268,7 +269,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
     <div class="pad">
       <kbd id="vk-kbd">⌘V</kbd>
       <span id="vk-how">Skopiuj klucz ElevenLabs i po prostu naciśnij ⌘V w tym oknie.</span>
-      <input class="txt" id="vk-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk_…" aria-label="Klucz ElevenLabs">
+      <input class="txt mask" id="vk-input" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore autocapitalize="off" spellcheck="false" placeholder="sk_…" aria-label="Klucz ElevenLabs">
     </div>
     <div class="msg" id="vk-msg" role="status"></div>
     <div class="row2"><button class="btn" id="vk-clip" type="button">Wklej ze schowka</button><button class="btn" id="vk-skip" type="button">Na razie bez tego głosu</button></div>
@@ -332,7 +333,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
             <label><input type="radio" name="sttp" id="set-sttp-openai" value="openai"><span>OpenAI</span></label>
           </div>
         </div>
-        <label class="field" id="sttkey-field"><span id="sttkey-label">Klucz do rozpoznawania</span><input class="txt" id="set-sttkey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label class="field" id="sttkey-field"><span id="sttkey-label">Klucz do rozpoznawania</span><input class="txt mask" id="set-sttkey" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore autocapitalize="off" spellcheck="false"></label>
       </div>
 
       <div class="group">
@@ -351,7 +352,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
           <div class="row2"><select class="txt" id="set-voice"></select><button class="btn" type="button" id="voice-test">Posłuchaj</button></div>
           <small>Lepszy polski głos na iPhonie: Ustawienia → Dostępność → Treść mówiona → Głosy → Polski → pobierz „Zosia (Ulepszona)”.</small>
         </div>
-        <label class="field"><span>Klucz ElevenLabs</span><input class="txt" id="set-elkey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Używany do głosu i do rozpoznawania"><small id="el-status" class="el-status"></small></label>
+        <label class="field"><span>Klucz ElevenLabs</span><input class="txt mask" id="set-elkey" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore autocapitalize="off" spellcheck="false" placeholder="Używany do głosu i do rozpoznawania"><small id="el-status" class="el-status"></small></label>
         <div class="field"><span>Głos ElevenLabs</span>
           <div class="seg" role="radiogroup" aria-label="Głos ElevenLabs">
             <label><input type="radio" name="elv" id="set-elv-jarvis" value="INANvjweZrJaX9aLFGf3"><span>Jarvis</span></label>
@@ -396,7 +397,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
         </div>
         <label class="switch"><span><b>Szukanie w internecie</b><small>Pogoda, wyniki, wiadomości. 1 wyszukanie kosztuje ok. 1 grosz plus chwilę dłużej.</small></span><input type="checkbox" id="set-web"></label>
         <label class="field"><span>Miasto (do pogody i lokalnych wyników)</span><input class="txt" id="set-city" maxlength="40" autocomplete="off" placeholder="np. Łódź"></label>
-        <label class="field"><span>Klucz Claude API</span><input class="txt" id="set-apikey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label class="field"><span>Klucz Claude API</span><input class="txt mask" id="set-apikey" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore autocapitalize="off" spellcheck="false"></label>
         <label class="field"><span>ID workspace (opcjonalnie)</span><input class="txt" id="set-ws" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="wrkspc_…"><small>Tylko dla klucza utworzonego bez wybranego workspace.</small></label>
       </div>
 
@@ -446,7 +447,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: ''
 };
-const APP_VERSION = '10';
+const APP_VERSION = '11';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -1514,7 +1515,7 @@ let vkBusy = false;
 async function acceptVoiceKey(raw) {
   const msg = $('#vk-msg'); msg.className = 'msg';
   const k = pickElKey(raw);
-  if (!k) { msg.textContent = /sk-ant-/.test(String(raw)) ? 'To jest klucz Claude. Tu potrzebny jest klucz ElevenLabs, zaczyna się od „sk_”.' : 'To nie wygląda na klucz ElevenLabs. Klucz zaczyna się od „sk_”.'; return; }
+  if (!k) { msg.textContent = /sk-ant-/.test(String(raw)) ? 'To jest klucz Claude. Tu potrzebny jest klucz ElevenLabs, zaczyna się od „sk_”.' : 'W schowku nie ma klucza ElevenLabs. Kliknij „Kopiuj do schowka” przy kluczu w ElevenLabs i naciśnij ⌘V jeszcze raz.'; $('#vk-input').value = ''; return; }
   if (vkBusy) return; vkBusy = true;
   audio.unlock();
   msg.textContent = 'Sprawdzam klucz…';
