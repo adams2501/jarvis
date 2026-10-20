@@ -412,7 +412,7 @@ const DEFAULTS = {
   mode: 'wake', followUp: 15, endMs: 800,
   stt: 'auto', sttProvider: 'eleven', sttKey: '',
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
-  greeted: false
+  greeted: false, voiceMigrated: false
 };
 const PERSONAS = {
   konkretny: 'Rzeczowy i ciepły, bez lania wody. Od razu przechodzisz do sedna.',
@@ -433,6 +433,11 @@ const S = {
   memory: load('memory', []), tasks: load('tasks', []), chat: load('chat', []), jobs: load('jobs', [])
 };
 for (const k of ['memory', 'tasks', 'chat', 'jobs']) if (!Array.isArray(S[k])) S[k] = [];
+if (!S.settings.voiceMigrated) {
+  if (S.settings.elVoice === 'EXAVITQu4vr4xnSDxMaL' || !S.settings.elVoice) { S.settings.elVoice = DEF_VOICE; S.settings.gender = 'ona'; }
+  if (S.settings.elKey) S.settings.tts = 'eleven';
+  S.settings.voiceMigrated = true; store('settings', S.settings);
+}
 const persist = name => store(name, S[name]);
 
 const rt = {
