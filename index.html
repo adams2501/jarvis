@@ -432,6 +432,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
         <h3>Mac i iPhone</h3>
         <div class="info" id="mac-info"></div>
         <div class="row2"><button class="btn" type="button" id="pair-show">Przenieś na iPhone'a</button><button class="btn" type="button" id="pair-scan">Połącz z Makiem</button></div>
+        <div class="row2"><button class="btn" type="button" id="notes-import">Wczytaj notatki o mnie</button><input type="file" id="notes-file" accept=".json,.txt,application/json,text/plain" hidden></div>
         <small class="info">„Przenieś na iPhone'a” pokazuje na Macu kod. Na iPhonie stuknij „Połącz z Makiem” i zeskanuj go: klucze, głos, pamięć i lista przejdą same.</small>
       </div>
 
@@ -481,7 +482,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '21';
+const APP_VERSION = '22';
 const QS = new URLSearchParams(location.search);
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
@@ -1543,6 +1544,34 @@ function pairDone() {
   if (!rt.started) begin(true);
   speaker.stop(); speaker.warned = false; speaker.say(`Gotowe, ${S.settings.user}. Mam wszystko z Maca.`);
 }
+/* Notatki o Adamie z pliku (np. „Jarvis - o mnie.json” z pulpitu): przycisk w ustawieniach albo przeciągnięcie pliku na okno. */
+function importNotes(text) {
+  let facts = [];
+  try { const j = JSON.parse(text); if (Array.isArray(j)) facts = j; else if (j && Array.isArray(j.fakty)) facts = j.fakty; }
+  catch (e) { facts = String(text).split(/\r?\n/); }
+  facts = facts.map(f => String(f || '').replace(/^[-•*\s]+/, '').trim()).filter(f => f.length > 3);
+  const have = new Set(S.memory.map(m => m.text.toLowerCase()));
+  let n = 0;
+  for (const f of facts) {
+    if (S.memory.length >= 200) break;
+    const t = f.slice(0, 300); if (have.has(t.toLowerCase())) continue;
+    S.memory.push({ id: rid('m'), text: t, at: Date.now() }); have.add(t.toLowerCase()); n++;
+  }
+  persist('memory'); renderSheet(); renderTelemetry();
+  return n;
+}
+function notesDone(n) {
+  note(n ? `Wczytane notatki o tobie: ${n}` : 'Te notatki już znam');
+  audio.unlock(); speaker.stop(); speaker.say(n ? `Gotowe, wczytałam ${n} rzeczy o tobie. Teraz wiem dużo więcej.` : 'Te notatki już znam.');
+}
+$('#notes-import').addEventListener('click', () => $('#notes-file').click());
+$('#notes-file').addEventListener('change', async e => { const f = e.target.files && e.target.files[0]; if (!f) return; const n = importNotes(await f.text()); e.target.value = ''; notesDone(n); });
+document.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+document.addEventListener('drop', async e => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (!f) return;
+  if (!/\.(json|txt)$/i.test(f.name)) return;
+  e.preventDefault(); notesDone(importNotes(await f.text()));
+});
 $('#pair-show').addEventListener('click', showPair);
 $('#pair-close').addEventListener('click', hidePair);
 $('#pair-scan').addEventListener('click', startScan);
@@ -2232,7 +2261,7 @@ function boot() {
   setInterval(() => refreshNews(false), 30 * 60000);
   checkReminders();
 }
-window.__jarvis = { S, rt, speaker, onUtterance, ask, findWake, applyPairForTest: t => { if (applyPair(t)) pairDone(); } };
+window.__jarvis = { S, rt, speaker, onUtterance, ask, findWake, applyPairForTest: t => { if (applyPair(t)) pairDone(); }, importNotes };
 boot();
 })();
 </script>
