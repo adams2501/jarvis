@@ -241,9 +241,10 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
     <ol class="steps">
       <li>Wejdź na <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> i zaloguj się.</li>
       <li>W Billing doładuj konto (minimum 5 $). Szybki model kosztuje ułamek centa za odpowiedź.</li>
-      <li>W API Keys kliknij Create Key, skopiuj klucz i wklej go poniżej.</li>
+      <li>W API Keys kliknij Create key. W polu <b>Workspace</b> wybierz <b>Default</b>, ważność ustaw na <b>Never</b> (albo najdłuższą), skopiuj klucz i wklej go poniżej.</li>
     </ol>
     <label class="field"><span>Klucz Claude API</span><input class="txt" id="setup-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…"></label>
+    <label class="field" id="setup-ws-field" hidden><span>ID workspace</span><input class="txt" id="setup-ws" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="wrkspc_…"><small>Potrzebne tylko dla klucza bez wybranego workspace. Znajdziesz je w Claude Console: Settings → Workspaces → kolumna ID przy „Default”.</small></label>
     <div class="row2"><button class="btn primary" id="setup-save" type="button">Zapisz i sprawdź</button></div>
     <div class="err" id="setup-err" role="alert"></div>
     <p class="info">Klucz zostaje tylko na tym urządzeniu. Na iPhonie i na Macu wklejasz go osobno.</p>
@@ -366,6 +367,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
         <label class="switch"><span><b>Szukanie w internecie</b><small>Pogoda, wyniki, wiadomości. 1 wyszukanie kosztuje ok. 1 grosz plus chwilę dłużej.</small></span><input type="checkbox" id="set-web"></label>
         <label class="field"><span>Miasto (do pogody i lokalnych wyników)</span><input class="txt" id="set-city" maxlength="40" autocomplete="off" placeholder="np. Łódź"></label>
         <label class="field"><span>Klucz Claude API</span><input class="txt" id="set-apikey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label class="field"><span>ID workspace (opcjonalnie)</span><input class="txt" id="set-ws" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="wrkspc_…"><small>Tylko dla klucza utworzonego bez wybranego workspace.</small></label>
       </div>
 
       <div class="group">
@@ -404,7 +406,7 @@ const FEMALE_VOICES = new Set(['INANvjweZrJaX9aLFGf3', 'EXAVITQu4vr4xnSDxMaL']);
 const FAST_MODELS = ['claude-haiku-5-5', 'claude-haiku-4-5'];
 const BIG_MODELS = ['claude-sonnet-5-5', 'claude-sonnet-4-5'];
 const DEFAULTS = {
-  apiKey: '', brain: 'fast', webSearch: true, city: '',
+  apiKey: '', workspaceId: '', brain: 'fast', webSearch: true, city: '',
   name: 'Jarvis', user: 'Adam', gender: 'ona', persona: 'konkretny',
   about: 'Montuję wideo w Premiere Pro na Macu, robię materiały dla PZPN.',
   mode: 'wake', followUp: 15, endMs: 800,
@@ -938,7 +940,8 @@ function apiError(status, body) {
   const msg = (body && body.error && body.error.message) || (status ? `HTTP ${status}` : 'błąd');
   const err = new Error(msg); err.status = status; err.type = body && body.error && body.error.type;
   const m = msg.toLowerCase();
-  if (status === 400 && /web.?search/.test(m)) err.kind = 'noweb';
+  if (/anthropic-workspace-id|workspace `/.test(m)) err.kind = 'workspace';
+  else if (status === 400 && /web.?search/.test(m)) err.kind = 'noweb';
   else if (status === 404 || err.type === 'not_found_error' || (status === 400 && /model/.test(m) && /(not found|invalid|does not exist|unknown|not supported)/.test(m))) err.kind = 'model';
   else if (status === 401 || err.type === 'authentication_error') err.kind = 'auth';
   else if (/credit balance|billing/.test(m)) err.kind = 'credit';
@@ -955,7 +958,7 @@ async function claudeStream({ model, system, messages, tools, maxTokens, signal,
   try {
     res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', signal,
-      headers: { 'content-type': 'application/json', 'x-api-key': S.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      headers: { 'content-type': 'application/json', 'x-api-key': S.settings.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true', ...(S.settings.workspaceId ? { 'anthropic-workspace-id': S.settings.workspaceId } : {}) },
       body: JSON.stringify(body)
     });
   } catch (e) {
@@ -1030,7 +1033,8 @@ async function claudeCall(kind, p) {
 }
 function errCopy(e) {
   switch (e && e.kind) {
-    case 'auth': return 'Klucz Claude API nie działa. Wklej go ponownie w ustawieniach.';
+    case 'auth': return 'Klucz Claude API nie działa (zły albo wygasł). Utwórz nowy na platform.claude.com i wklej go w ustawieniach.';
+    case 'workspace': return 'Ten klucz Claude wymaga wskazania workspace. Najprościej: utwórz nowy klucz i przy tworzeniu wybierz Workspace „Default”. Albo wpisz ID workspace (wrkspc_…) w polu poniżej.';
     case 'credit': return 'Na koncie Claude API skończyły się środki. Doładuj je na console.anthropic.com.';
     case 'perm': return 'Ten klucz nie ma dostępu do modelu Claude.';
     case 'rate': return 'Za dużo pytań naraz. Spróbuj za chwilę.';
@@ -1157,7 +1161,7 @@ async function ask(cmd) {
     else {
       if (shown.trim()) addTurn({ role: 'assistant', content: tidy(shown) + ' …' });
       showBanner(errCopy(e)); speaker.say(spokenErr(e));
-      if (e && e.kind === 'auth') setTimeout(openSetup, 1200);
+      if (e && (e.kind === 'auth' || e.kind === 'workspace')) setTimeout(openSetup, 1200);
     }
   } finally {
     if (rt.busy === ctl) rt.busy = null;
@@ -1339,7 +1343,7 @@ function renderSettings() {
   const s = S.settings, act = document.activeElement;
   const setVal = (id, v) => { const e = $('#' + id); if (e && e !== act) e.value = v; };
   setVal('set-name', s.name); setVal('set-user', s.user); setVal('set-about', s.about); setVal('set-city', s.city);
-  setVal('set-apikey', s.apiKey); setVal('set-elkey', s.elKey); setVal('set-elvoice', s.elVoice); setVal('set-sttkey', s.sttKey);
+  setVal('set-apikey', s.apiKey); setVal('set-ws', s.workspaceId); setVal('set-elkey', s.elKey); setVal('set-elvoice', s.elVoice); setVal('set-sttkey', s.sttKey);
   setVal('set-rate', String(s.rate)); setVal('set-followup', String(s.followUp)); setVal('set-end', String(s.endMs));
   $('#rate-val').textContent = `${Number(s.rate).toFixed(2).replace('.', ',')}×`;
   $('#fu-val').textContent = `${s.followUp} s`;
@@ -1375,19 +1379,20 @@ function hideBanner() { $('#banner').hidden = true; }
 $('#banner-x').addEventListener('click', hideBanner);
 
 /* ================= setup & gate ================= */
-function openSetup() { $('#setup').hidden = false; $('#gate').hidden = true; $('#setup-key').value = S.settings.apiKey || ''; $('#setup-err').textContent = ''; }
+function openSetup() { $('#setup').hidden = false; $('#gate').hidden = true; $('#setup-key').value = S.settings.apiKey || ''; $('#setup-ws').value = S.settings.workspaceId || ''; $('#setup-ws-field').hidden = !S.settings.workspaceId; $('#setup-err').textContent = ''; }
 $('#setup-save').addEventListener('click', async () => {
-  const key = $('#setup-key').value.trim(); const err = $('#setup-err'); const btn = $('#setup-save');
+  const key = $('#setup-key').value.trim(); const ws = $('#setup-ws').value.trim(); const err = $('#setup-err'); const btn = $('#setup-save');
   if (!key) { err.textContent = 'Wklej klucz, który zaczyna się od sk-ant-.'; return; }
   btn.disabled = true; err.textContent = ''; btn.textContent = 'Sprawdzam…';
-  const prev = S.settings.apiKey; S.settings.apiKey = key;
+  const prev = S.settings.apiKey, prevWs = S.settings.workspaceId; S.settings.apiKey = key; S.settings.workspaceId = ws;
   try {
     await claudeCall('fast', { system: 'Odpowiedz jednym słowem.', messages: [{ role: 'user', content: 'Test' }], tools: [], maxTokens: 5 });
     store('settings', S.settings);
     $('#setup').hidden = true; if (!rt.started) $('#gate').hidden = false;
     renderAll();
   } catch (e) {
-    S.settings.apiKey = prev;
+    S.settings.apiKey = prev; S.settings.workspaceId = prevWs;
+    if (e && e.kind === 'workspace') $('#setup-ws-field').hidden = false;
     err.textContent = e && e.kind === 'net' ? 'Brak połączenia z internetem albo przeglądarka zablokowała połączenie.' : errCopy(e);
   } finally { btn.disabled = false; btn.textContent = 'Zapisz i sprawdź'; }
 });
@@ -1447,6 +1452,7 @@ bindText('set-name', 'name', 20, DEFAULTS.name);
 bindText('set-user', 'user', 32, DEFAULTS.user);
 bindText('set-city', 'city', 40);
 bindText('set-apikey', 'apiKey', 300);
+bindText('set-ws', 'workspaceId', 80);
 $('#set-elkey').addEventListener('input', e => {
   const had = !!S.settings.elKey; S.settings.elKey = e.target.value.trim().slice(0, 300);
   if (!had && S.settings.elKey) { S.settings.tts = 'eleven'; speaker.warned = false; const r = $('#set-tts-eleven'); if (r) r.checked = true; $('#sysvoice-field').hidden = true; }
