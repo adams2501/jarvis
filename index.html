@@ -190,6 +190,13 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 .info b{color:var(--dim);font-weight:600}
 .el-status{font-family:var(--f-mono);font-size:12px!important;color:var(--amber)!important}
 .el-status.ok{color:var(--ok)!important}
+.pad{border:1.5px dashed var(--arc);border-radius:18px;padding:26px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;background:rgba(142,230,255,.05)}
+.pad kbd{font-family:var(--f-display);font-size:34px;font-weight:600;letter-spacing:.08em;color:var(--arc)}
+.pad .txt{max-width:340px;text-align:center}
+.msg{font-size:14px;min-height:1.3em;color:var(--amber)}
+.msg.ok{color:var(--ok)}
+#dormant{z-index:80;background:var(--ground)}
+#dormant .btn{margin-top:18px}
 
 @media (prefers-reduced-motion: reduce){.panel{animation:none}.pending .body:empty::after{animation:none;clip-path:none}}
 @media (max-height:640px){#orb{width:min(40vw,150px,22vh)}.brand small{display:none}}
@@ -251,6 +258,26 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
     <div class="err" id="setup-err" role="alert"></div>
     <p class="info">Klucz zostaje tylko na tym urządzeniu. Na iPhonie i na Macu wklejasz go osobno.</p>
   </div>
+</div>
+
+<div class="setup" id="voicekey" hidden>
+  <div class="setup-in">
+    <h1>Głos Jarvisa</h1>
+    <p id="vk-lead">Ostatni krok: klucz ElevenLabs. Dzięki niemu Jarvis mówi swoim nowym głosem.</p>
+    <div class="pad">
+      <kbd id="vk-kbd">⌘V</kbd>
+      <span id="vk-how">Skopiuj klucz ElevenLabs i po prostu naciśnij ⌘V w tym oknie.</span>
+      <input class="txt" id="vk-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk_…" aria-label="Klucz ElevenLabs">
+    </div>
+    <div class="msg" id="vk-msg" role="status"></div>
+    <div class="row2"><button class="btn" id="vk-clip" type="button">Wklej ze schowka</button><button class="btn" id="vk-skip" type="button">Na razie bez tego głosu</button></div>
+    <p class="info">Klucz zaczyna się od „sk_”. Jest na elevenlabs.io w Developers → API Keys. Zostaje tylko na tym urządzeniu.</p>
+  </div>
+</div>
+
+<div class="overlay" id="dormant" hidden>
+  <p class="gate-note"><b>Jarvis działa w nowszym oknie.</b><br>To okno możesz zamknąć.</p>
+  <button class="btn" id="dormant-take" type="button">Używaj tego okna</button>
 </div>
 
 <div class="sheet" id="sheet" hidden>
@@ -396,6 +423,8 @@ const hhmm = ts => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(
 const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+/* Na komputerze Jarvis słucha także wtedy, gdy okno jest schowane za innymi; na telefonie system i tak wstrzymuje stronę. */
+const PAUSE_HIDDEN = IS_IOS || /Android/i.test(navigator.userAgent);
 const reduceMotion = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 const ICON = {
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>',
@@ -414,8 +443,18 @@ const DEFAULTS = {
   mode: 'wake', followUp: 15, endMs: 800,
   stt: 'auto', sttProvider: 'eleven', sttKey: '',
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
-  greeted: false, voiceMigrated: false
+  greeted: false, voiceMigrated: false, voiceSkip: false, elOk: ''
 };
+const APP_VERSION = '8';
+/* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
+function pickElKey(raw) {
+  const s = String(raw || '');
+  const i = s.indexOf('sk_'); if (i < 0) return '';
+  let rest = s.slice(i + 3); const j = rest.indexOf('sk_'); if (j >= 0) rest = rest.slice(0, j);
+  const m = rest.match(/^[A-Za-z0-9]+/);
+  return m && m[0].length >= 20 ? 'sk_' + m[0] : '';
+}
+const keyFp = k => k ? `${k.slice(0, 3)}…${k.slice(-4)}:${k.length}` : '';
 const PERSONAS = {
   konkretny: 'Rzeczowy i ciepły, bez lania wody. Od razu przechodzisz do sedna.',
   lokaj: 'Kulturalny i elegancki, z suchym, delikatnym humorem, jak filmowy kamerdyner. Uprzejmy, ale nigdy przesłodzony.',
@@ -439,6 +478,11 @@ if (!S.settings.voiceMigrated) {
   if (S.settings.elVoice === 'EXAVITQu4vr4xnSDxMaL' || !S.settings.elVoice) { S.settings.elVoice = DEF_VOICE; S.settings.gender = 'ona'; }
   if (S.settings.elKey) S.settings.tts = 'eleven';
   S.settings.voiceMigrated = true; store('settings', S.settings);
+}
+if (S.settings.elKey) {
+  const k = pickElKey(S.settings.elKey);
+  if (k !== S.settings.elKey) { S.settings.elKey = k; S.settings.elOk = ''; store('settings', S.settings); }
+  if (k && S.settings.tts !== 'eleven' && !S.settings.voiceSkip) { S.settings.tts = 'eleven'; store('settings', S.settings); }
 }
 const persist = name => store(name, S[name]);
 
@@ -848,7 +892,7 @@ function onListenError(code) {
 }
 function syncListen() {
   const L = rt.listener; if (!L || !rt.started) { renderStatus(); return; }
-  const should = !rt.busy && !speaker.active && document.visibilityState === 'visible' && !rt.needTap && $('#sheet').hidden;
+  const should = !dormant && !rt.busy && !speaker.active && (!PAUSE_HIDDEN || document.visibilityState === 'visible') && !rt.needTap && $('#sheet').hidden && $('#voicekey').hidden;
   if (should) L.resume(); else L.pause();
   renderStatus();
 }
@@ -1371,6 +1415,7 @@ function renderSettings() {
   line('Rozpoznawanie', rt.engine === 'cloud' ? `w chmurze (${({ eleven: 'ElevenLabs', groq: 'Groq', openai: 'OpenAI' })[s.sttProvider]})` : rt.engine === 'system' ? 'systemowe' : 'niedostępne');
   line('Urządzenie', `${IS_IOS ? 'iPhone/iPad' : 'komputer'}${STANDALONE ? ', jako aplikacja' : ', w przeglądarce'}`);
   line('Dane', 'pamięć, lista i klucze zostają tylko na tym urządzeniu');
+  line('Wersja', APP_VERSION);
 }
 let elCheckSeq = 0;
 async function checkElKey() {
@@ -1386,6 +1431,7 @@ async function checkElKey() {
     await elevenTTS('Tak.');
     if (seq !== elCheckSeq) return;
     el.textContent = `Klucz ${fp} działa. Głos: ${S.settings.elVoice === DEF_VOICE ? 'Jarvis' : S.settings.elVoice}.`; el.classList.add('ok');
+    S.settings.elOk = keyFp(k); saveNow();
     rt.elError = null; renderTelemetry();
   } catch (e) {
     if (seq !== elCheckSeq) return;
@@ -1416,7 +1462,8 @@ $('#setup-save').addEventListener('click', async () => {
   try {
     await claudeCall('fast', { system: 'Odpowiedz jednym słowem.', messages: [{ role: 'user', content: 'Test' }], tools: [], maxTokens: 5 });
     store('settings', S.settings);
-    $('#setup').hidden = true; if (!rt.started) $('#gate').hidden = false;
+    $('#setup').hidden = true;
+    if (!S.settings.elKey && !S.settings.voiceSkip) openVoiceKey(); else if (!rt.started) begin();
     renderAll();
   } catch (e) {
     S.settings.apiKey = prev; S.settings.workspaceId = prevWs;
@@ -1428,18 +1475,112 @@ function requestWakeLock() {
   if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
   navigator.wakeLock.request('screen').then(l => { rt.wakeLock = l; l.addEventListener('release', () => { if (rt.wakeLock === l) rt.wakeLock = null; }); }).catch(() => {});
 }
-function begin() {
+function begin(quiet) {
+  if (dormant || rt.started) { $('#gate').hidden = true; return; }
   audio.unlock(); speaker.unlockSys();
   rt.started = true; $('#gate').hidden = true;
   startListener();
   requestWakeLock();
   renderAll();
-  if (!S.settings.greeted) {
+  if (quiet === true) { S.settings.greeted = true; store('settings', S.settings); }
+  else if (!S.settings.greeted) {
     S.settings.greeted = true; store('settings', S.settings);
     speaker.say(S.settings.mode === 'always' ? `Cześć ${S.settings.user}. Słucham, po prostu mów.` : `Cześć ${S.settings.user}. Powiedz ${S.settings.name} i od razu mów, o co chodzi.`);
   } else audio.chime(true);
 }
-$('#gate-btn').addEventListener('click', begin);
+$('#gate-btn').addEventListener('click', () => begin());
+$('#gate').addEventListener('pointerdown', e => { if (e.target.closest('#gate-btn')) return; begin(); });
+document.addEventListener('keydown', e => { if (!$('#gate').hidden && $('#setup').hidden && $('#voicekey').hidden && !e.metaKey && !e.ctrlKey) { e.preventDefault(); begin(); } });
+/* Jeśli przeglądarka pozwala grać dźwięk bez kliknięcia, Jarvis startuje sam. */
+function startOrGate() {
+  if (dormant || rt.started) return;
+  const c = audio.get();
+  if (c && c.state === 'running') { begin(); return; }
+  $('#gate').hidden = false;
+  if (c && c.resume) c.resume().then(() => { if (!rt.started && !dormant && c.state === 'running' && !$('#gate').hidden) begin(); }).catch(() => {});
+}
+
+/* ================= klucz głosu ================= */
+function openVoiceKey(lead) {
+  $('#gate').hidden = true; $('#voicekey').hidden = false;
+  $('#vk-lead').textContent = lead || 'Ostatni krok: klucz ElevenLabs. Dzięki niemu Jarvis mówi swoim nowym głosem.';
+  if (IS_IOS) { $('#vk-kbd').hidden = true; $('#vk-how').textContent = 'Skopiuj klucz ElevenLabs, stuknij pole poniżej i wybierz Wklej.'; }
+  const m = $('#vk-msg'); m.className = 'msg'; m.textContent = '';
+  if (!IS_IOS) setTimeout(() => { const f = $('#vk-input'); if (f && !$('#voicekey').hidden) f.focus(); }, 200);
+}
+function closeVoiceKey() { $('#voicekey').hidden = true; $('#vk-input').value = ''; }
+let vkBusy = false;
+async function acceptVoiceKey(raw) {
+  const msg = $('#vk-msg'); msg.className = 'msg';
+  const k = pickElKey(raw);
+  if (!k) { msg.textContent = /sk-ant-/.test(String(raw)) ? 'To jest klucz Claude. Tu potrzebny jest klucz ElevenLabs, zaczyna się od „sk_”.' : 'To nie wygląda na klucz ElevenLabs. Klucz zaczyna się od „sk_”.'; return; }
+  if (vkBusy) return; vkBusy = true;
+  audio.unlock();
+  msg.textContent = 'Sprawdzam klucz…';
+  const s = S.settings, prev = s.elKey; s.elKey = k;
+  try { await elevenTTS('Tak.'); }
+  catch (e) { s.elKey = prev; vkBusy = false; msg.textContent = `Ten klucz nie działa: ${e.message}.`; return; }
+  vkBusy = false;
+  s.tts = 'eleven'; s.voiceSkip = false; s.elOk = keyFp(k);
+  if (!s.elVoice || s.elVoice === 'EXAVITQu4vr4xnSDxMaL') { s.elVoice = DEF_VOICE; s.gender = 'ona'; }
+  saveNow(); speaker.warned = false; rt.elError = null; renderTelemetry();
+  msg.className = 'msg ok'; msg.textContent = 'Działa.';
+  closeVoiceKey();
+  if (!rt.started) begin(true);
+  speaker.stop(); speaker.say(`Do usług, ${s.user}. Tak teraz brzmię. Powiedz ${s.name}, kiedy będę ${s.gender === 'ona' ? 'potrzebna' : 'potrzebny'}.`);
+}
+document.addEventListener('paste', e => {
+  if ($('#voicekey').hidden) return;
+  const t = (e.clipboardData && e.clipboardData.getData('text')) || '';
+  e.preventDefault(); acceptVoiceKey(t);
+});
+$('#vk-input').addEventListener('input', e => { const v = e.target.value; if (pickElKey(v).length >= 40) acceptVoiceKey(v); });
+$('#vk-clip').addEventListener('click', async () => {
+  audio.unlock();
+  try { const t = await navigator.clipboard.readText(); acceptVoiceKey(t); }
+  catch (e) { const m = $('#vk-msg'); m.className = 'msg'; m.textContent = IS_IOS ? 'Stuknij pole wyżej i wybierz Wklej.' : 'Przeglądarka nie dała dostępu do schowka. Naciśnij ⌘V.'; }
+});
+$('#vk-skip').addEventListener('click', () => {
+  S.settings.voiceSkip = true; saveNow(); closeVoiceKey();
+  if (S.settings.apiKey) begin();
+});
+/* Zapisany klucz sprawdzany raz; zły klucz od razu pokazuje ekran wklejania. */
+async function verifyStoredVoiceKey() {
+  const s = S.settings, k = s.elKey;
+  if (!k || s.elOk === keyFp(k)) return;
+  try { await elevenTTS('Tak.'); if (S.settings.elKey === k) { s.elOk = keyFp(k); saveNow(); } }
+  catch (e) {
+    if (S.settings.elKey !== k) return;
+    if (/zły klucz|dostępu/.test(e.message) && !dormant) {
+      s.elKey = ''; s.elOk = ''; saveNow();
+      openVoiceKey(`Zapisany klucz ElevenLabs nie działa (${e.message}). Wklej właściwy, a Jarvis od razu zacznie mówić nowym głosem.`);
+    } else speaker.warnEleven(e);
+  }
+}
+
+/* ================= jedno okno naraz ================= */
+var dormant = false;
+const INST = { id: Math.random().toString(36).slice(2), at: Date.now() };
+const chan = 'BroadcastChannel' in window ? new BroadcastChannel('jarvis-okno') : null;
+function claim() { if (!chan || dormant) return; try { chan.postMessage({ t: 'claim', id: INST.id, at: INST.at, focus: document.hasFocus() }); } catch (e) { /* ignore */ } }
+const beats = (a, b) => (!!a.focus !== !!b.focus) ? !!a.focus : (a.at !== b.at ? a.at > b.at : a.id > b.id);
+if (chan) chan.onmessage = e => {
+  const m = e.data; if (!m || m.t !== 'claim' || m.id === INST.id || dormant) return;
+  if (beats(m, { id: INST.id, at: INST.at, focus: document.hasFocus() })) goDormant(); else claim();
+};
+window.addEventListener('focus', () => { if (!dormant) claim(); });
+function goDormant() {
+  if (dormant) return; dormant = true;
+  try { if (rt.busy) rt.busy.abort(); } catch (e) { /* ignore */ }
+  speaker.stop();
+  if (rt.listener) { try { rt.listener.stop(); } catch (e) { /* ignore */ } rt.listener = null; }
+  rt.started = false; stopOrb();
+  if (rt.wakeLock) { try { rt.wakeLock.release(); } catch (e) { /* ignore */ } }
+  for (const id of ['gate', 'setup', 'voicekey', 'sheet', 'resume']) $('#' + id).hidden = true;
+  $('#dormant').hidden = false;
+  setTimeout(() => { try { window.close(); } catch (e) { /* ignore */ } }, 200);
+}
+$('#dormant-take').addEventListener('click', () => location.reload());
 $('#resume').addEventListener('click', () => {
   audio.unlock();
   rt.needTap = false; renderResume(); hideBanner();
@@ -1459,7 +1600,7 @@ function openSheet(tab) {
 }
 function closeSheet() {
   $('#sheet').hidden = true; saveNow();
-  if (!rt.started && S.settings.apiKey && $('#setup').hidden) $('#gate').hidden = false;
+  if (!rt.started && S.settings.apiKey && $('#setup').hidden && $('#voicekey').hidden) startOrGate();
   const want = chooseEngine();
   if (rt.started && (want !== rt.engine || !rt.listener)) startListener();
   renderAll(); syncListen();
@@ -1484,7 +1625,7 @@ bindText('set-apikey', 'apiKey', 300);
 bindText('set-ws', 'workspaceId', 80);
 let elTestTimer = 0, elTested = '';
 $('#set-elkey').addEventListener('input', e => {
-  const val = e.target.value.trim();
+  const val = pickElKey(e.target.value) || e.target.value.trim();
   if (/^sk-ant-/.test(val)) { S.settings.elKey = ''; S.settings.tts = 'system'; saveSoon(); showBanner('To jest klucz Claude, a w to pole wklej klucz ElevenLabs (zaczyna się od „sk_”).'); return; }
   hideBanner();
   const had = !!S.settings.elKey; S.settings.elKey = val.slice(0, 300);
@@ -1621,7 +1762,8 @@ if ('ResizeObserver' in window) new ResizeObserver(sizeOrb).observe(orb.cv); els
 
 /* ================= lifecycle ================= */
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { stopOrb(); if (rt.listener) rt.listener.pause(); return; }
+  if (dormant) return;
+  if (document.hidden) { stopOrb(); if (PAUSE_HIDDEN && rt.listener) rt.listener.pause(); return; }
   startOrb(); checkReminders();
   if (audio.ctx && audio.ctx.state !== 'running') audio.ctx.resume().catch(() => {});
   if (rt.started) { requestWakeLock(); syncListen(); }
@@ -1631,11 +1773,12 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.se
 
 function boot() {
   sizeOrb(); startOrb(); renderAll();
+  claim();
   if (!S.settings.apiKey) openSetup();
-  else if (/ustawienia|glos/.test(location.hash)) {
-    openSheet('settings');
-    setTimeout(() => { const f = $('#set-elkey'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); f.select(); } }, 350);
-  } else $('#gate').hidden = false;
+  else if (!S.settings.elKey && !S.settings.voiceSkip) openVoiceKey();
+  else if (/ustawienia/.test(location.hash)) { openSheet('settings'); }
+  else startOrGate();
+  if (S.settings.apiKey) verifyStoredVoiceKey();
   if (IS_IOS && !STANDALONE) $('#gate-note').innerHTML = 'Jedno stuknięcie po otwarciu, potem wystarczy mówić.<br><br><b>Dodaj Jarvisa do ekranu początkowego:</b> Udostępnij → Do ekranu początkowego.';
   setInterval(() => { if (rt.started) renderStatus(); }, 1000);
   setInterval(checkReminders, 15000);
