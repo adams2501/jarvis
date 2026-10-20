@@ -804,7 +804,6 @@ function chooseEngine() {
   const s = S.settings;
   if (s.stt === 'cloud') return hasCloudKey() ? 'cloud' : (SR ? 'system' : 'none');
   if (s.stt === 'system') return SR ? 'system' : (hasCloudKey() ? 'cloud' : 'none');
-  if (IS_IOS && hasCloudKey()) return 'cloud';
   if (SR) return 'system';
   return hasCloudKey() ? 'cloud' : 'none';
 }
@@ -823,7 +822,7 @@ function onListenError(code) {
   else if (code === 'nomic') { rt.needTap = true; showBanner('Nie widzę mikrofonu. Sprawdź, czy jest podłączony, i stuknij przycisk na dole.'); }
   else if (code === 'network') { rt.needTap = true; showBanner('Rozpoznawanie mowy potrzebuje internetu. Gdy wróci, stuknij przycisk na dole.'); }
   else if (code === 'nosr') showBanner('Ta przeglądarka nie obsługuje rozpoznawania mowy.');
-  else rt.needTap = true;
+  else { rt.needTap = true; if (IS_IOS && rt.engine === 'system') showBanner('Rozpoznawanie mowy w telefonie się zawiesiło. Stuknij przycisk na dole. Jeśli to się powtarza, w ustawieniach wybierz rozpoznawanie „W chmurze”.'); }
   renderResume(); syncListen();
 }
 function syncListen() {
@@ -1436,7 +1435,11 @@ bindText('set-name', 'name', 20, DEFAULTS.name);
 bindText('set-user', 'user', 32, DEFAULTS.user);
 bindText('set-city', 'city', 40);
 bindText('set-apikey', 'apiKey', 300);
-bindText('set-elkey', 'elKey', 300);
+$('#set-elkey').addEventListener('input', e => {
+  const had = !!S.settings.elKey; S.settings.elKey = e.target.value.trim().slice(0, 300);
+  if (!had && S.settings.elKey) { S.settings.tts = 'eleven'; speaker.warned = false; const r = $('#set-tts-eleven'); if (r) r.checked = true; $('#sysvoice-field').hidden = true; }
+  saveSoon();
+});
 bindText('set-elvoice', 'elVoice', 64, DEF_VOICE);
 bindText('set-sttkey', 'sttKey', 300);
 $('#set-about').addEventListener('input', e => { S.settings.about = e.target.value.slice(0, 800); saveSoon(); });
