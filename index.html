@@ -481,7 +481,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '19';
+const APP_VERSION = '20';
 const QS = new URLSearchParams(location.search);
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
@@ -1091,12 +1091,15 @@ async function claudeStream({ model, system, messages, tools, maxTokens, signal,
       case 'content_block_start': {
         const b = { ...ev.content_block }; b._json = '';
         if (b.type === 'text') b.text = b.text || '';
+        if (b.type === 'thinking') b.thinking = b.thinking || '';
         blocks[ev.index] = b; break;
       }
       case 'content_block_delta': {
         const b = blocks[ev.index]; if (!b) break; const d = ev.delta || {};
         if (d.type === 'text_delta') { b.text += d.text; text += d.text; if (onText) onText(text); }
         else if (d.type === 'input_json_delta') b._json += d.partial_json || '';
+        else if (d.type === 'thinking_delta') b.thinking = (b.thinking || '') + (d.thinking || '');
+        else if (d.type === 'signature_delta') b.signature = d.signature;
         else if (d.type === 'citations_delta' && d.citation) (b.citations = b.citations || []).push(d.citation);
         break;
       }
@@ -1130,7 +1133,8 @@ async function claudeStream({ model, system, messages, tools, maxTokens, signal,
       handle(ev);
     }
   }
-  const content = blocks.filter(Boolean).map(b => { const { _json, ...rest } = b; return rest; }).filter(b => !(b.type === 'text' && !String(b.text || '').trim()));
+  /* Bloki myślenia bez podpisu i puste teksty nie mogą wrócić do API w kolejnej turze. */
+  const content = blocks.filter(Boolean).map(b => { const { _json, ...rest } = b; return rest; }).filter(b => !(b.type === 'text' && !String(b.text || '').trim()) && !(b.type === 'thinking' && (!b.thinking || !b.signature)));
   return { content, stop, text };
 }
 async function claudeCall(kind, p) {
