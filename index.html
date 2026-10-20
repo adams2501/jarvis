@@ -481,7 +481,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '17';
+const APP_VERSION = '18';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -997,7 +997,7 @@ function contextBlock() {
   const tasks = open.length ? open.map(t => `- [${t.id}] ${t.text}${t.due ? ` (termin: ${t.due})` : ''}`).join('\n') : '(brak otwartych zadań)';
   const jobs = S.jobs.filter(j => j.status === 'running' && jobCtls.has(j.id)).map(j => `- ${j.title}`).join('\n');
   const timers = S.timers.filter(t => !t.fired).map(t => `- [${t.id}] ${t.kind === 'budzik' ? 'budzik' : 'minutnik'}${t.label ? ` „${t.label}”` : ''}: dzwoni o ${hhmmss(t.at)}${t.kind === 'minutnik' ? ` (za ${leftText(t.at)})` : ''}`).join('\n');
-  const cjobs = S.jobs.filter(j => j.kind === 'claude' && j.sesja).slice(0, 4).map(j => `- [sesja ${j.sesja}] ${j.title} (${j.tryb === 'szkic' ? 'szkic maila' : 'odczyt'}, ${j.status === 'done' ? 'gotowe' : j.status === 'running' ? 'w toku' : 'nieudane'})`).join('\n');
+  const cjobs = S.jobs.filter(j => j.kind === 'claude' && j.sesja).slice(0, 4).map(j => `- [sesja ${j.sesja}] ${j.title} (${j.status === 'done' ? 'gotowe' : j.status === 'running' ? 'w toku' : 'nieudane'})`).join('\n');
   const news = S.news && S.news.text ? `\nBieżące wiadomości (zebrane ${new Date(S.news.at).toLocaleString('pl-PL', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}):\n${S.news.text.slice(0, 1800)}` : '';
   return `Teraz: ${nowLine()}, czas polski.${s.city ? `\nMiasto użytkownika: ${s.city}.` : ''}
 O użytkowniku: ${s.about || '(brak)'}
@@ -1018,6 +1018,15 @@ Każdą twoją odpowiedź od razu czyta syntezator mowy, dlatego:
 Mówisz o sobie w rodzaju ${s.gender === 'on' ? 'męskim (np. „sprawdziłem”)' : 'żeńskim (np. „sprawdziłam”)'}.
 Charakter: ${PERSONAS[s.persona]}
 Tekst pochodzi z rozpoznawania mowy i bywa przekręcony. Domyśl się sensu, a gdy naprawdę nie wiesz, o co chodzi, dopytaj jednym krótkim pytaniem.
+
+Co umiesz (gdy pyta, co potrafisz, wymień to swoimi słowami, krótko):
+- rozmawiać o wszystkim, doradzać, tłumaczyć, pisać teksty i podpowiadać przy montażu;
+- szukać w internecie: pogoda, wiadomości, wyniki, ceny, ludzie, firmy, produkty;
+- pamiętać fakty o nim i jego sprawach oraz wracać do nich;
+- prowadzić listę zadań i przypomnień, nastawiać minutniki i budziki;
+- dłuższą pracę robić w tle i oddzwaniać z wynikiem;
+${macOn() ? '- na Macu: otwierać programy (Premiere Pro, Spotify, Finder i inne), strony i pliki, szukać plików, ustawiać głośność, sterować muzyką, czytać i dodawać wydarzenia w Kalendarzu;\n- pocztę z programu Poczta na Macu: sprawdzać nowe maile, czytać je i przygotowywać odpowiedzi jako szkice;\n- zlecać Claude\'owi na Macu większe wyszukiwania i przejrzenie plików;' : IS_IOS ? '- na iPhonie nie sterujesz Makiem ani pocztą; to robi Jarvis na Macu;' : '- sterowanie Makiem, kalendarz i poczta wrócą, gdy połączysz się z pomocnikiem na Macu (przycisk „Połącz z Makiem” u góry, potem „Zezwalaj” w Chrome);'}
+Nie umiesz: klikać i pisać za niego w programach, wysyłać maili, dzwonić, wysyłać SMS-ów ani płacić. Gdy prosi o coś takiego, powiedz to krótko i zaproponuj, co możesz zrobić zamiast tego.
 
 ${contextBlock()}
 
@@ -1205,7 +1214,8 @@ const TOOL_DEFS = [
 const MAC_TOOLS = [
   { name: 'mac', description: 'Steruje Makiem Adama przez pomocnika: otwiera programy (np. "Adobe Premiere Pro 2026", "Spotify", "Finder"), strony i pliki, szuka plików, zmienia głośność, steruje muzyką, zamyka programy, pokazuje powiadomienie.', input_schema: { type: 'object', properties: { akcja: { type: 'string', enum: ['otworz_program', 'otworz_strone', 'otworz_plik', 'znajdz_plik', 'glosnosc', 'muzyka', 'zamknij_program', 'powiadomienie'] }, cel: { type: 'string', description: 'Nazwa programu, adres strony, nazwa pliku; przy muzyce: play, pauza, nastepny, poprzedni; przy głośności: wycisz albo wlacz.' }, wartosc: { type: 'number', description: 'Głośność 0–100.' } }, required: ['akcja'] } },
   { name: 'kalendarz', description: 'Kalendarz na Macu Adama: lista wydarzeń w zakresie dat albo dodanie wydarzenia. Daty w formacie RRRR-MM-DDTHH:MM, czas polski.', input_schema: { type: 'object', properties: { akcja: { type: 'string', enum: ['lista', 'dodaj'] }, od: { type: 'string' }, do: { type: 'string' }, tytul: { type: 'string' }, start: { type: 'string' }, koniec: { type: 'string' }, miejsce: { type: 'string' } }, required: ['akcja'] } },
-  { name: 'zlec_claude', description: 'Zleca zadanie Claude\'owi na Macu Adama (Claude Code z dostępem do Gmaila asmedia.film@gmail.com, internetu i plików do odczytu). Do: sprawdzania i streszczania maili, przygotowania odpowiedzi na maila jako szkic w Gmailu (tryb szkic), większych wyszukiwań i porównań, przejrzenia plików. Wraca od razu, wynik przyjdzie sam. Maili nie wysyła: szkic czeka w wersjach roboczych, Adam wysyła go sam.', input_schema: { type: 'object', properties: { tytul: { type: 'string', description: 'Krótki tytuł, 2–5 słów.' }, zadanie: { type: 'string', description: 'Pełne polecenie z kontekstem z rozmowy, po polsku.' }, tryb: { type: 'string', enum: ['czytaj', 'szkic'], description: 'szkic tylko gdy trzeba przygotować odpowiedź na maila.' }, sesja: { type: 'string', description: 'Opcjonalnie id sesji z listy ostatnich zleceń, gdy to ciąg dalszy (np. poprawka szkicu).' } }, required: ['tytul', 'zadanie'] } }
+  { name: 'poczta', description: 'Poczta Adama w programie Poczta na Macu (konta: iCloud i, jeśli dodane, asmedia.film@gmail.com). lista: ostatnie wiadomości (odebrane albo wysłane, opcjonalnie tylko nieprzeczytane). czytaj: cała treść po id. szkic: zapisuje gotową wiadomość w Wersjach roboczych (odpowiedź na maila po odpowiedz_na albo nowy mail do adresu). Nic nie wysyła: Adam wysyła sam.', input_schema: { type: 'object', properties: { akcja: { type: 'string', enum: ['lista', 'czytaj', 'szkic', 'konta'] }, ile: { type: 'number', description: 'lista: ile wiadomości, 1–25.' }, nieprzeczytane: { type: 'boolean', description: 'lista: tylko nieprzeczytane.' }, skrzynka: { type: 'string', enum: ['odebrane', 'wyslane'] }, id: { type: 'string', description: 'czytaj: id z listy.' }, odpowiedz_na: { type: 'string', description: 'szkic: id maila, na który odpowiadasz.' }, do: { type: 'string', description: 'szkic nowego maila: adres odbiorcy.' }, temat: { type: 'string' }, tresc: { type: 'string', description: 'szkic: pełna treść, z pozdrowieniem i podpisem Adama.' } }, required: ['akcja'] } },
+  { name: 'zlec_claude', description: 'Zleca zadanie Claude\'owi na Macu Adama (Claude Code z internetem i plikami Adama do odczytu): większe wyszukiwania i porównania, dłuższe opracowania, przejrzenie plików i projektów. Wraca od razu, wynik przyjdzie sam.', input_schema: { type: 'object', properties: { tytul: { type: 'string', description: 'Krótki tytuł, 2–5 słów.' }, zadanie: { type: 'string', description: 'Pełne polecenie z kontekstem z rozmowy, po polsku.' }, sesja: { type: 'string', description: 'Opcjonalnie id sesji z listy ostatnich zleceń, gdy to ciąg dalszy.' } }, required: ['tytul', 'zadanie'] } }
 ];
 function toolList(fg) {
   const t = TOOL_DEFS.filter(d => fg || !['zlec_w_tle', 'minutnik', 'budzik', 'usun_alarm'].includes(d.name)).map(d => ({ ...d }));
@@ -1249,6 +1259,13 @@ const EXEC = {
   },
   mac: async inp => { const r = await helperCall('/mac', inp); if (inp.akcja === 'znajdz_plik') return { pliki: r.pliki || [] }; note(r.wynik || 'Zrobione na Macu'); return r.wynik || 'Zrobione.'; },
   kalendarz: async inp => { const r = await helperCall('/kalendarz', inp, 40000); if (inp.akcja === 'dodaj') { note(r.wynik || 'Dodane do kalendarza'); return r.wynik; } return { od: r.od, do: r.do, wydarzenia: r.wydarzenia || [] }; },
+  poczta: async inp => {
+    const r = await helperCall('/poczta', inp, 90000);
+    if (inp.akcja === 'szkic') { note(r.wynik || 'Szkic zapisany'); addTurn({ role: 'assistant', kind: 'draft', title: 'Szkic maila', content: String(inp.tresc || '') }); return r.wynik; }
+    if (inp.akcja === 'konta') return { konta: r.konta || [] };
+    if (inp.akcja === 'czytaj') return { id: r.id, od: r.od, temat: r.temat, data: r.data, do: r.do, tresc: r.tresc };
+    return { wiadomosci: r.wiadomosci || [] };
+  },
   zlec_claude: inp => startClaudeJob(inp)
 };
 async function runTools(content) {
@@ -1305,19 +1322,20 @@ $('#mac-connect').addEventListener('click', async () => {
 window.addEventListener('focus', () => { if (!macOn()) checkMac(); });
 function renderMacInfo() {
   const box = $('#mac-info'); if (!box) return;
-  box.textContent = IS_IOS ? 'Na iPhonie Jarvis działa sam; Mac steruje się z Jarvisa na Macu.' : !rt.mac ? 'Sprawdzam pomocnika na Macu…' : !rt.mac.ok ? 'Pomocnik na Macu nie działa. Uruchom Jarvisa ikoną na pulpicie.' : `Pomocnik na Macu działa. Claude na Macu: ${rt.mac.claude ? 'jest' : 'nie znaleziony'}. Poczta asmedia.film: ${rt.mac.poczta === true || rt.mac.poczta === 'true' ? 'podłączona' : rt.mac.poczta === 'sprawdzam' ? 'sprawdzam' : 'niedostępna w Claude na Macu'}.`;
+  box.textContent = IS_IOS ? 'Na iPhonie Jarvis działa sam; Mac steruje się z Jarvisa na Macu.' : !rt.mac ? 'Sprawdzam pomocnika na Macu…' : !rt.mac.ok ? 'Pomocnik na Macu nie działa. Uruchom Jarvisa ikoną na pulpicie.' : `Pomocnik na Macu działa. Claude na Macu: ${rt.mac.claude ? 'jest' : 'nie znaleziony'}. Poczta: przez program Poczta na Macu.`;
 }
 function macRules() {
-  if (!macOn()) return `- ${IS_IOS ? 'Na telefonie nie masz dostępu do Maca, maila ani kalendarza; to działa w Jarvisie na Macu.' : 'Pomocnik na Macu teraz nie działa, więc nie sterujesz Makiem, mailem ani kalendarzem; powiedz, żeby uruchomił Jarvisa ikoną na pulpicie.'} Jeśli o to poprosi, powiedz to jednym zdaniem.`;
+  if (!macOn()) return `- ${IS_IOS ? 'Na telefonie nie masz dostępu do Maca, maila ani kalendarza; to działa w Jarvisie na Macu.' : 'Połączenie z pomocnikiem na Macu teraz nie działa, więc nie sterujesz Makiem, pocztą ani kalendarzem. Jeśli o to poprosi, powiedz jednym zdaniem: niech kliknie „Połącz z Makiem” u góry okna i „Zezwalaj”, gdy Chrome zapyta; jeśli przycisku nie ma, niech otworzy Jarvisa ikoną na pulpicie.'}`;
   return `- Na Macu działa pomocnik. Narzędziem mac otwierasz programy (np. Premiere Pro), strony i pliki, szukasz plików, zmieniasz głośność i muzykę. Narzędziem kalendarz czytasz i dodajesz wydarzenia w Kalendarzu na Macu.
-- Narzędziem zlec_claude zlecasz zadania Claude'owi na Macu: maile ze skrzynki asmedia.film@gmail.com (sprawdź, streść, przygotuj odpowiedź jako szkic w trybie szkic), większe wyszukiwania i porównania, przejrzenie plików. Powiedz krótko, że Claude się tym zajmuje. Maili nie wysyłasz: szkic czeka w Gmailu w wersjach roboczych i Adam wysyła go sam.
+- Narzędziem poczta obsługujesz pocztę z programu Poczta na Macu: sprawdzasz nowe maile (lista z nieprzeczytane), czytasz treść (czytaj) i przygotowujesz odpowiedzi. Gdy ma odpowiedzieć na maila: przeczytaj go, zerknij na 2–3 wysłane maile (lista, skrzynka wyslane), napisz odpowiedź w stylu i tonie Adama, z jego podpisem, zapisz ją narzędziem poczta szkic z odpowiedz_na i powiedz krótko, co napisałaś. Maili nie wysyłasz: szkic czeka w Wersjach roboczych i Adam wysyła go sam. Gdy mówi o skrzynce asmedia.film, chodzi o konto asmedia.film@gmail.com; jeśli lista nie pokazuje takiego konta, powiedz, że trzeba je dodać do programu Poczta.
+- Narzędziem zlec_claude zlecasz Claude'owi na Macu większe wyszukiwania, porównania, opracowania i przejrzenie plików. Powiedz krótko, że Claude się tym zajmuje.
 - Gdy prosi o coś, czego nie umiesz zrobić od razu, a da się to zrobić przez Claude'a na Macu, zleć to narzędziem zlec_claude zamiast odmawiać.`;
 }
 function startClaudeJob(inp) {
   if (!macOn()) throw new Error('Pomocnik na Macu nie działa.');
   const running = S.jobs.filter(j => j.status === 'running' && jobCtls.has(j.id)).length;
   if (running >= 2) throw new Error('W tle pracują już dwa zadania. Poczekaj, aż któreś się skończy.');
-  const job = { id: rid('j'), kind: 'claude', title: String(inp.tytul || 'Zadanie').trim().slice(0, 80), task: String(inp.zadanie || '').trim().slice(0, 5000), tryb: inp.tryb === 'szkic' ? 'szkic' : 'czytaj', sesja: /^[A-Za-z0-9-]{8,80}$/.test(String(inp.sesja || '')) ? String(inp.sesja) : '', status: 'running', at: Date.now() };
+  const job = { id: rid('j'), kind: 'claude', title: String(inp.tytul || 'Zadanie').trim().slice(0, 80), task: String(inp.zadanie || '').trim().slice(0, 5000), tryb: 'czytaj', sesja: /^[A-Za-z0-9-]{8,80}$/.test(String(inp.sesja || '')) ? String(inp.sesja) : '', status: 'running', at: Date.now() };
   S.jobs.unshift(job); S.jobs = S.jobs.slice(0, 12); persist('jobs'); renderSheet(); renderTelemetry();
   note(`Zlecone Claude'owi na Macu: ${job.title}`);
   runClaudeJob(job);
@@ -1334,7 +1352,7 @@ async function runClaudeJob(job) {
     const result = tidy(r.wynik || '').slice(0, 4000) || 'Zrobione.';
     patch({ status: 'done', result, sesja: r.sesja || job.sesja, doneAt: Date.now() });
     addTurn({ role: 'assistant', kind: 'job', title: job.title, content: result });
-    speaker.say(`${job.tryb === 'szkic' ? 'Szkic gotowy' : 'Gotowe'}: ${job.title}. ${firstSentences(result, 2)}${job.tryb === 'szkic' ? ' Szkic czeka w Gmailu w wersjach roboczych.' : ''}`);
+    speaker.say(`Gotowe: ${job.title}. ${firstSentences(result, 2)}`);
   } catch (e) {
     patch({ status: 'failed', error: String(e.message || e) });
     note(`Claude na Macu nie dał rady: ${job.title}. ${e.message || e}`);
@@ -1614,6 +1632,7 @@ function msgNode(t) {
   const n = el('div', 'msg ' + (t.role === 'user' ? 'user' : 'jarvis'));
   const who = el('div', 'who', `${t.role === 'user' ? 'Ty' : S.settings.name} · ${hhmm(t.at || Date.now())}`);
   if (t.kind === 'job') who.appendChild(el('em', '', ` · w tle · ${t.title || ''}`));
+  if (t.kind === 'draft') who.appendChild(el('em', '', ' · szkic maila (w Wersjach roboczych)'));
   n.appendChild(who); n.appendChild(el('div', 'body', t.content));
   return n;
 }
