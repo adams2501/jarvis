@@ -1,4 +1,4 @@
-const VERSION = '15';
+const VERSION = '16';
 const CACHE = 'jarvis-v' + VERSION;
 const ASSETS = ['./index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => {
@@ -30,7 +30,7 @@ function pageVersion(w) {
   return new Promise(res => {
     const ch = new MessageChannel(); const to = setTimeout(() => res(null), 800);
     ch.port1.onmessage = e => { clearTimeout(to); res(e.data && e.data.v); };
-    try { w.postMessage({ t: 'ver' }, [ch.port2]); } catch (err) { clearTimeout(to); res(null); }
+    try { w.postMessage({ t: 'ver', v: VERSION }, [ch.port2]); } catch (err) { clearTimeout(to); res(null); }
   });
 }
 self.addEventListener('fetch', e => {

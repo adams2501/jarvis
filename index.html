@@ -195,8 +195,8 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 .pad kbd{font-family:var(--f-display);font-size:34px;font-weight:600;letter-spacing:.08em;color:var(--arc)}
 .pad .txt{max-width:340px;text-align:center}
 .mask{-webkit-text-security:disc;text-security:disc}
-.msg{font-size:14px;min-height:1.3em;color:var(--amber)}
-.msg.ok{color:var(--ok)}
+.vkm{font-size:14px;min-height:1.3em;color:var(--amber)}
+.vkm.ok{color:var(--ok)}
 #dormant{z-index:80;background:var(--ground)}
 #dormant .btn,#gate .install-btn,#installov .btn{margin-top:18px}
 #installov{z-index:75;background:var(--ground)}
@@ -279,7 +279,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
       <span id="vk-how">Skopiuj klucz ElevenLabs i po prostu naciśnij ⌘V w tym oknie.</span>
       <input class="txt mask" id="vk-input" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore autocapitalize="off" spellcheck="false" placeholder="sk_…" aria-label="Klucz ElevenLabs">
     </div>
-    <div class="msg" id="vk-msg" role="status"></div>
+    <div class="vkm" id="vk-msg" role="status"></div>
     <div class="row2"><button class="btn" id="vk-clip" type="button">Wklej ze schowka</button><button class="btn" id="vk-skip" type="button">Na razie bez tego głosu</button></div>
     <p class="info">Klucz zaczyna się od „sk_”. Jest na elevenlabs.io w Developers → API Keys. Zostaje tylko na tym urządzeniu.</p>
   </div>
@@ -480,7 +480,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '15';
+const APP_VERSION = '16';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -1815,13 +1815,13 @@ function openVoiceKey(lead) {
   $('#gate').hidden = true; $('#voicekey').hidden = false;
   $('#vk-lead').textContent = lead || 'Ostatni krok: klucz ElevenLabs. Dzięki niemu Jarvis mówi swoim nowym głosem.';
   if (IS_IOS) { $('#vk-kbd').hidden = true; $('#vk-how').textContent = 'Skopiuj klucz ElevenLabs, stuknij pole poniżej i wybierz Wklej.'; }
-  const m = $('#vk-msg'); m.className = 'msg'; m.textContent = '';
+  const m = $('#vk-msg'); m.className = 'vkm'; m.textContent = '';
   if (!IS_IOS) setTimeout(() => { const f = $('#vk-input'); if (f && !$('#voicekey').hidden) f.focus(); }, 200);
 }
 function closeVoiceKey() { $('#voicekey').hidden = true; $('#vk-input').value = ''; }
 let vkBusy = false;
 async function acceptVoiceKey(raw) {
-  const msg = $('#vk-msg'); msg.className = 'msg';
+  const msg = $('#vk-msg'); msg.className = 'vkm';
   const k = pickElKey(raw);
   if (!k) { msg.textContent = /sk-ant-/.test(String(raw)) ? 'To jest klucz Claude. Tu potrzebny jest klucz ElevenLabs, zaczyna się od „sk_”.' : 'W schowku nie ma klucza ElevenLabs. Kliknij „Kopiuj do schowka” przy kluczu w ElevenLabs i naciśnij ⌘V jeszcze raz.'; $('#vk-input').value = ''; return; }
   if (vkBusy) return; vkBusy = true;
@@ -1837,7 +1837,7 @@ async function acceptVoiceKey(raw) {
   s.tts = 'eleven'; s.voiceSkip = false; s.elOk = keyFp(k);
   if (!s.elVoice || s.elVoice === 'EXAVITQu4vr4xnSDxMaL') { s.elVoice = DEF_VOICE; s.gender = 'ona'; }
   saveNow(); speaker.warned = false; rt.elError = null; renderTelemetry();
-  msg.className = 'msg ok'; msg.textContent = 'Działa.';
+  msg.className = 'vkm ok'; msg.textContent = 'Działa.';
   closeVoiceKey();
   if (!rt.started) begin(true);
   speaker.stop(); speaker.say(`Do usług, ${s.user}. Tak teraz brzmię. Powiedz ${s.name}, kiedy będę ${s.gender === 'ona' ? 'potrzebna' : 'potrzebny'}.`);
@@ -1851,7 +1851,7 @@ $('#vk-input').addEventListener('input', e => { const v = e.target.value; if (pi
 $('#vk-clip').addEventListener('click', async () => {
   audio.unlock();
   try { const t = await navigator.clipboard.readText(); acceptVoiceKey(t); }
-  catch (e) { const m = $('#vk-msg'); m.className = 'msg'; m.textContent = IS_IOS ? 'Stuknij pole wyżej i wybierz Wklej.' : 'Przeglądarka nie dała dostępu do schowka. Naciśnij ⌘V.'; }
+  catch (e) { const m = $('#vk-msg'); m.className = 'vkm'; m.textContent = IS_IOS ? 'Stuknij pole wyżej i wybierz Wklej.' : 'Przeglądarka nie dała dostępu do schowka. Naciśnij ⌘V.'; }
 });
 $('#vk-skip').addEventListener('click', () => {
   S.settings.voiceSkip = true; saveNow(); closeVoiceKey();
@@ -2088,8 +2088,25 @@ document.addEventListener('visibilitychange', () => {
 });
 if (speaker.sysOk) { try { speechSynthesis.addEventListener('voiceschanged', () => { speaker.pickVoice(); if (!$('#sheet').hidden) renderVoices(); }); } catch (e) { /* older engines */ } }
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.onmessage = e => { const d = e.data; if (d && d.t === 'ver' && e.ports && e.ports[0]) e.ports[0].postMessage({ v: APP_VERSION }); };
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  /* Nowa wersja: odpowiadamy, że przejmujemy przeładowanie, i robimy je sami, gdy Jarvis akurat nic nie mówi ani nie słucha polecenia. */
+  navigator.serviceWorker.onmessage = e => {
+    const d = e.data; if (!d || d.t !== 'ver' || !e.ports || !e.ports[0]) return;
+    if (d.v && d.v !== APP_VERSION) { e.ports[0].postMessage({ v: d.v }); reloadWhenIdle(); }
+    else e.ports[0].postMessage({ v: APP_VERSION });
+  };
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const up = () => { try { reg.update().catch(() => {}); } catch (e) { /* ignore */ } };
+    setInterval(up, 20 * 60000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) up(); });
+  }).catch(() => {});
+}
+let reloadTimer = 0;
+function reloadWhenIdle() {
+  if (reloadTimer) return;
+  reloadTimer = setInterval(() => {
+    if (rt.busy || speaker.active || rt.ringing || Date.now() - rt.lastHeardAt < 6000 || S.jobs.some(j => j.status === 'running' && jobCtls.has(j.id))) return;
+    clearInterval(reloadTimer); location.reload();
+  }, 2000);
 }
 /* Instalacja jako aplikacja na Macu: zainstalowany Jarvis startuje bez stukania. */
 let installEvt = null, installFallback = false;
