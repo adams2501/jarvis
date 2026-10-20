@@ -57,6 +57,7 @@ a{color:var(--arc)}
 .brand b{font-family:var(--f-display);font-weight:600;font-size:16px;letter-spacing:.34em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brand small{font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;margin-top:3px}
 .top-actions{display:flex;gap:8px;flex-shrink:0}
+.pill-btn.accent{border-color:var(--arc);color:var(--arc)}
 .pill-btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 12px;border:1px solid var(--line-2);border-radius:999px;background:var(--panel);font-weight:600;font-size:13px}
 .pill-btn svg{width:16px;height:16px}
 .pill-btn:active{background:var(--raise)}
@@ -197,7 +198,8 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 .msg{font-size:14px;min-height:1.3em;color:var(--amber)}
 .msg.ok{color:var(--ok)}
 #dormant{z-index:80;background:var(--ground)}
-#dormant .btn,#gate .install-btn{margin-top:18px}
+#dormant .btn,#gate .install-btn,#installov .btn{margin-top:18px}
+#installov{z-index:75;background:var(--ground)}
 
 @media (prefers-reduced-motion: reduce){.panel{animation:none}.pending .body:empty::after{animation:none;clip-path:none}}
 @media (max-height:640px){#orb{width:min(40vw,150px,22vh)}.brand small{display:none}}
@@ -208,6 +210,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
   <header class="top">
     <div class="brand"><b id="brand">Jarvis</b><small id="mode-label">Na hasło</small></div>
     <div class="top-actions">
+      <button class="pill-btn accent install-btn" type="button" hidden aria-label="Zainstaluj Jarvisa na Macu, żeby startował bez stukania"><span>Zainstaluj</span></button>
       <button class="pill-btn" id="open-tasks" type="button" aria-label="Zadania i pamięć">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>
         <span>Lista</span><span class="badge" id="task-badge" hidden>0</span>
@@ -275,6 +278,12 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
     <div class="row2"><button class="btn" id="vk-clip" type="button">Wklej ze schowka</button><button class="btn" id="vk-skip" type="button">Na razie bez tego głosu</button></div>
     <p class="info">Klucz zaczyna się od „sk_”. Jest na elevenlabs.io w Developers → API Keys. Zostaje tylko na tym urządzeniu.</p>
   </div>
+</div>
+
+<div class="overlay" id="installov" hidden>
+  <p class="gate-note"><b>Zainstaluj Jarvisa na Macu</b><br>Zainstalowany Jarvis po otwarciu od razu słucha, bez stukania.</p>
+  <button class="btn primary install-btn" type="button" hidden>Zainstaluj</button>
+  <p class="gate-note" id="installov-hint">Chwila… Jeśli przycisk się nie pojawi, kliknij ikonę instalacji po prawej stronie paska adresu Chrome.</p>
 </div>
 
 <div class="overlay" id="dormant" hidden>
@@ -447,7 +456,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: ''
 };
-const APP_VERSION = '12';
+const APP_VERSION = '13';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -1563,7 +1572,7 @@ async function verifyStoredVoiceKey() {
 /* ================= jedno okno naraz ================= */
 var dormant = false;
 /* Wygrywa okno z przodu, potem najnowiej uruchomione z ikony (parametr t), potem najnowiej załadowane. */
-const INST = { id: Math.random().toString(36).slice(2), at: Number(new URLSearchParams(location.search).get('t')) || 0, born: Math.round(performance.timeOrigin || Date.now()) };
+const INST = { id: Math.random().toString(36).slice(2), at: /[?&]zainstaluj/.test(location.search) ? 9e15 : (Number(new URLSearchParams(location.search).get('t')) || 0), born: Math.round(performance.timeOrigin || Date.now()) };
 const chan = 'BroadcastChannel' in window ? new BroadcastChannel('jarvis-okno') : null;
 const me = () => ({ t: 'claim', id: INST.id, at: INST.at, born: INST.born, focus: document.hasFocus() });
 function claim() { if (!chan || dormant) return; try { chan.postMessage(me()); } catch (e) { /* ignore */ } }
@@ -1777,15 +1786,27 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 /* Instalacja jako aplikacja na Macu: zainstalowany Jarvis startuje bez stukania. */
-let installEvt = null;
-function renderInstall() { for (const b of document.querySelectorAll('.install-btn')) b.hidden = !installEvt; }
+let installEvt = null, installFallback = false;
+const QS = new URLSearchParams(location.search);
+const INSTALL_PAGE = location.origin + location.pathname + '?zainstaluj=1';
+function renderInstall() {
+  for (const b of document.querySelectorAll('.install-btn')) b.hidden = !(installEvt || (installFallback && !b.closest('#installov')));
+  if (!$('#installov').hidden) $('#installov-hint').hidden = !!installEvt;
+}
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderInstall(); });
-window.addEventListener('appinstalled', () => { installEvt = null; renderInstall(); showBanner('Jarvis jest zainstalowany. Od teraz otwieraj go ikoną na pulpicie, startuje od razu.'); });
-for (const b of document.querySelectorAll('.install-btn')) b.addEventListener('click', async ev => {
-  ev.stopPropagation(); if (!installEvt) return;
-  const e = installEvt; installEvt = null; renderInstall();
-  try { await e.prompt(); } catch (err) { /* ignore */ }
+window.addEventListener('appinstalled', () => {
+  installEvt = null; installFallback = false; renderInstall();
+  if (!$('#installov').hidden) { $('#installov').hidden = true; }
+  showBanner('Jarvis jest zainstalowany. Od teraz otwieraj go ikoną na pulpicie: startuje od razu, bez stukania.');
 });
+for (const b of document.querySelectorAll('.install-btn')) b.addEventListener('click', async ev => {
+  ev.stopPropagation();
+  if (installEvt) { const e = installEvt; installEvt = null; renderInstall(); try { await e.prompt(); } catch (err) { /* ignore */ } return; }
+  if (installFallback) window.open(INSTALL_PAGE, '_blank');
+});
+/* Okno z ikony na pulpicie (parametr t) to jeszcze nie zainstalowana aplikacja: jeśli Chrome nie zaproponuje instalacji tutaj, otwieramy stronę instalacji w zwykłej karcie. */
+if (!IS_IOS && QS.has('t')) setTimeout(() => { if (!installEvt && !dormant) { installFallback = true; renderInstall(); } }, 5000);
+if (QS.has('zainstaluj')) { $('#installov').hidden = false; renderInstall(); }
 
 function boot() {
   sizeOrb(); startOrb(); renderAll();
