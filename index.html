@@ -196,7 +196,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 .msg{font-size:14px;min-height:1.3em;color:var(--amber)}
 .msg.ok{color:var(--ok)}
 #dormant{z-index:80;background:var(--ground)}
-#dormant .btn{margin-top:18px}
+#dormant .btn,#gate .install-btn{margin-top:18px}
 
 @media (prefers-reduced-motion: reduce){.panel{animation:none}.pending .body:empty::after{animation:none;clip-path:none}}
 @media (max-height:640px){#orb{width:min(40vw,150px,22vh)}.brand small{display:none}}
@@ -241,6 +241,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
 <div class="overlay" id="gate" hidden>
   <button class="gate-btn" id="gate-btn" type="button"><span>Stuknij, żeby obudzić</span></button>
   <p class="gate-note" id="gate-note">Telefon i przeglądarka wymagają jednego stuknięcia po otwarciu aplikacji. Potem wystarczy mówić.</p>
+  <button class="btn install-btn" type="button" hidden>Zainstaluj na Macu, żeby startował bez stukania</button>
 </div>
 
 <div class="setup" id="setup" hidden>
@@ -445,7 +446,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: ''
 };
-const APP_VERSION = '9';
+const APP_VERSION = '10';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -1489,7 +1490,7 @@ function begin(quiet) {
   } else audio.chime(true);
 }
 $('#gate-btn').addEventListener('click', () => begin());
-$('#gate').addEventListener('pointerdown', e => { if (e.target.closest('#gate-btn')) return; begin(); });
+$('#gate').addEventListener('pointerdown', e => { if (e.target.closest('#gate-btn, .install-btn')) return; begin(); });
 document.addEventListener('keydown', e => { if (!$('#gate').hidden && $('#setup').hidden && $('#voicekey').hidden && !e.metaKey && !e.ctrlKey) { e.preventDefault(); begin(); } });
 /* Jeśli przeglądarka pozwala grać dźwięk bez kliknięcia, Jarvis startuje sam. */
 function startOrGate() {
@@ -1560,13 +1561,15 @@ async function verifyStoredVoiceKey() {
 
 /* ================= jedno okno naraz ================= */
 var dormant = false;
-const INST = { id: Math.random().toString(36).slice(2), at: Date.now() };
+/* Wygrywa okno z przodu, potem najnowiej uruchomione z ikony (parametr t), potem najnowiej załadowane. */
+const INST = { id: Math.random().toString(36).slice(2), at: Number(new URLSearchParams(location.search).get('t')) || 0, born: Math.round(performance.timeOrigin || Date.now()) };
 const chan = 'BroadcastChannel' in window ? new BroadcastChannel('jarvis-okno') : null;
-function claim() { if (!chan || dormant) return; try { chan.postMessage({ t: 'claim', id: INST.id, at: INST.at, focus: document.hasFocus() }); } catch (e) { /* ignore */ } }
-const beats = (a, b) => (!!a.focus !== !!b.focus) ? !!a.focus : (a.at !== b.at ? a.at > b.at : a.id > b.id);
+const me = () => ({ t: 'claim', id: INST.id, at: INST.at, born: INST.born, focus: document.hasFocus() });
+function claim() { if (!chan || dormant) return; try { chan.postMessage(me()); } catch (e) { /* ignore */ } }
+const beats = (a, b) => (!!a.focus !== !!b.focus) ? !!a.focus : a.at !== b.at ? a.at > b.at : a.born !== b.born ? a.born > b.born : a.id > b.id;
 if (chan) chan.onmessage = e => {
   const m = e.data; if (!m || m.t !== 'claim' || m.id === INST.id || dormant) return;
-  if (beats(m, { id: INST.id, at: INST.at, focus: document.hasFocus() })) goDormant(); else claim();
+  if (beats(m, me())) goDormant(); else claim();
 };
 window.addEventListener('focus', () => { if (!dormant) claim(); });
 function goDormant() {
@@ -1769,7 +1772,20 @@ document.addEventListener('visibilitychange', () => {
   if (rt.started) { requestWakeLock(); syncListen(); }
 });
 if (speaker.sysOk) { try { speechSynthesis.addEventListener('voiceschanged', () => { speaker.pickVoice(); if (!$('#sheet').hidden) renderVoices(); }); } catch (e) { /* older engines */ } }
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.onmessage = e => { const d = e.data; if (d && d.t === 'ver' && e.ports && e.ports[0]) e.ports[0].postMessage({ v: APP_VERSION }); };
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+/* Instalacja jako aplikacja na Macu: zainstalowany Jarvis startuje bez stukania. */
+let installEvt = null;
+function renderInstall() { for (const b of document.querySelectorAll('.install-btn')) b.hidden = !installEvt; }
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderInstall(); });
+window.addEventListener('appinstalled', () => { installEvt = null; renderInstall(); showBanner('Jarvis jest zainstalowany. Od teraz otwieraj go ikoną na pulpicie, startuje od razu.'); });
+for (const b of document.querySelectorAll('.install-btn')) b.addEventListener('click', async ev => {
+  ev.stopPropagation(); if (!installEvt) return;
+  const e = installEvt; installEvt = null; renderInstall();
+  try { await e.prompt(); } catch (err) { /* ignore */ }
+});
 
 function boot() {
   sizeOrb(); startOrb(); renderAll();
