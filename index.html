@@ -481,7 +481,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '20';
+const APP_VERSION = '21';
 const QS = new URLSearchParams(location.search);
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
@@ -1028,6 +1028,7 @@ Co umiesz (gdy pyta, co potrafisz, wymień to swoimi słowami, krótko):
 - dłuższą pracę robić w tle i oddzwaniać z wynikiem;
 ${macOn() ? '- na Macu: otwierać programy (Premiere Pro, Spotify, Finder i inne), strony i pliki, szukać plików, ustawiać głośność, sterować muzyką, czytać i dodawać wydarzenia w Kalendarzu;\n- pocztę z programu Poczta na Macu: sprawdzać nowe maile, czytać je i przygotowywać odpowiedzi jako szkice;\n- zlecać Claude\'owi na Macu większe wyszukiwania i przejrzenie plików;' : IS_IOS ? '- na iPhonie nie sterujesz Makiem ani pocztą; to robi Jarvis na Macu;' : '- sterowanie Makiem, kalendarz i poczta wrócą, gdy połączysz się z pomocnikiem na Macu (przycisk „Połącz z Makiem” u góry, potem „Zezwalaj” w Chrome);'}
 Nie umiesz: klikać i pisać za niego w programach, wysyłać maili, dzwonić, wysyłać SMS-ów ani płacić. Gdy prosi o coś takiego, powiedz to krótko i zaproponuj, co możesz zrobić zamiast tego.
+Uczciwość: nie masz żadnego kontaktu z Claude'em z czatu w aplikacji Claude ani z nikim innym poza swoimi narzędziami. Nigdy nie mów, że coś przekazujesz, wysyłasz, zgłaszasz albo naprawiasz, jeśli właśnie nie wywołałaś narzędzia, które to robi. Nie udawaj wykonania. Gdy narzędzie zwróci błąd, powiedz krótko, co się nie udało i co Adam może zrobić.
 
 ${contextBlock()}
 
@@ -1361,9 +1362,11 @@ async function runClaudeJob(job) {
     addTurn({ role: 'assistant', kind: 'job', title: job.title, content: result });
     speaker.say(`Gotowe: ${job.title}. ${firstSentences(result, 2)}`);
   } catch (e) {
-    patch({ status: 'failed', error: String(e.message || e) });
-    note(`Claude na Macu nie dał rady: ${job.title}. ${e.message || e}`);
-    speaker.say(`Nie udało się: ${job.title}. ${String(e.message || '').slice(0, 120)}`);
+    let msg = String(e.message || e);
+    if (/oauth|authenticat|log ?in|zalog|credentials|401/i.test(msg)) msg = 'Claude na Macu jest wylogowany. Otwórz Terminal, wpisz claude i zaloguj się swoim kontem Claude.';
+    patch({ status: 'failed', error: msg });
+    note(`Claude na Macu nie dał rady: ${job.title}. ${msg}`);
+    speaker.say(`Nie udało się: ${job.title}. ${msg.slice(0, 160)}`);
   } finally { jobCtls.delete(job.id); persist('jobs'); renderSheet(); renderTelemetry(); }
 }
 
