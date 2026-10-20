@@ -215,6 +215,7 @@ textarea.txt{resize:vertical;min-height:70px;line-height:1.45}
   <header class="top">
     <div class="brand"><b id="brand">Jarvis</b><small id="mode-label">Na hasło</small></div>
     <div class="top-actions">
+      <button class="pill-btn accent" id="notes-pill" type="button" hidden aria-label="Wczytaj notatki o mnie z pliku"><span>Wczytaj notatki o mnie</span></button>
       <button class="pill-btn accent" id="mac-connect" type="button" hidden aria-label="Połącz Jarvisa z Makiem"><span>Połącz z Makiem</span></button>
       <button class="pill-btn accent install-btn" type="button" hidden aria-label="Zainstaluj Jarvisa na Macu, żeby startował bez stukania"><span>Zainstaluj</span></button>
       <button class="pill-btn" id="open-tasks" type="button" aria-label="Zadania i pamięć">
@@ -482,7 +483,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '23';
+const APP_VERSION = '24';
 const QS = new URLSearchParams(location.search);
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
@@ -1558,7 +1559,7 @@ function importNotes(text) {
     const t = f.slice(0, 300); if (have.has(t.toLowerCase())) continue;
     S.memory.push({ id: rid('m'), text: t, at: Date.now() }); have.add(t.toLowerCase()); n++;
   }
-  persist('memory'); renderSheet(); renderTelemetry();
+  persist('memory'); renderSheet(); renderTelemetry(); renderNotesPill();
   return n;
 }
 function notesDone(n) {
@@ -1566,6 +1567,8 @@ function notesDone(n) {
   audio.unlock(); speaker.stop(); speaker.say(n ? `Gotowe, wczytałam ${n} rzeczy o tobie. Teraz wiem dużo więcej.` : 'Te notatki już znam.');
 }
 $('#notes-import').addEventListener('click', () => $('#notes-file').click());
+$('#notes-pill').addEventListener('click', () => $('#notes-file').click());
+function renderNotesPill() { $('#notes-pill').hidden = IS_IOS || S.memory.length >= 30 || dormant; }
 $('#notes-file').addEventListener('change', async e => { const f = e.target.files && e.target.files[0]; if (!f) return; const n = importNotes(await f.text()); e.target.value = ''; notesDone(n); });
 document.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
 document.addEventListener('drop', async e => {
@@ -2256,6 +2259,7 @@ function boot() {
   if (S.settings.apiKey) verifyStoredVoiceKey();
   if (IS_IOS && !STANDALONE) $('#gate-note').innerHTML = 'Jedno stuknięcie po otwarciu, potem wystarczy mówić.<br><br><b>Dodaj Jarvisa do ekranu początkowego:</b> Udostępnij → Do ekranu początkowego.';
   setInterval(() => { if (rt.started) renderStatus(); }, 1000);
+  renderNotesPill();
   setInterval(checkReminders, 15000);
   setInterval(checkAlarms, 1000);
   checkMac(); setInterval(checkMac, 60000);
