@@ -1436,6 +1436,7 @@ function openSheet(tab) {
 }
 function closeSheet() {
   $('#sheet').hidden = true; saveNow();
+  if (!rt.started && S.settings.apiKey && $('#setup').hidden) $('#gate').hidden = false;
   const want = chooseEngine();
   if (rt.started && (want !== rt.engine || !rt.listener)) startListener();
   renderAll(); syncListen();
@@ -1458,9 +1459,21 @@ bindText('set-user', 'user', 32, DEFAULTS.user);
 bindText('set-city', 'city', 40);
 bindText('set-apikey', 'apiKey', 300);
 bindText('set-ws', 'workspaceId', 80);
+let elTestTimer = 0, elTested = '';
 $('#set-elkey').addEventListener('input', e => {
   const had = !!S.settings.elKey; S.settings.elKey = e.target.value.trim().slice(0, 300);
   if (!had && S.settings.elKey) { S.settings.tts = 'eleven'; speaker.warned = false; const r = $('#set-tts-eleven'); if (r) r.checked = true; $('#sysvoice-field').hidden = true; }
+  if (S.settings.elKey.length >= 30 && S.settings.elKey !== elTested) {
+    audio.unlock();
+    clearTimeout(elTestTimer);
+    elTestTimer = setTimeout(() => {
+      elTested = S.settings.elKey;
+      const s = S.settings;
+      s.tts = 'eleven'; if (s.elVoice === 'EXAVITQu4vr4xnSDxMaL' || !s.elVoice) { s.elVoice = DEF_VOICE; s.gender = 'ona'; }
+      saveNow(); renderSettings(); renderTelemetry();
+      speaker.stop(); speaker.warned = false; speaker.say(`Do usług, ${s.user}. Tak teraz brzmię.`);
+    }, 500);
+  }
   saveSoon();
 });
 bindText('set-elvoice', 'elVoice', 64, DEF_VOICE);
@@ -1593,7 +1606,10 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.se
 function boot() {
   sizeOrb(); startOrb(); renderAll();
   if (!S.settings.apiKey) openSetup();
-  else $('#gate').hidden = false;
+  else if (/ustawienia|glos/.test(location.hash)) {
+    openSheet('settings');
+    setTimeout(() => { const f = $('#set-elkey'); if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); } }, 350);
+  } else $('#gate').hidden = false;
   if (IS_IOS && !STANDALONE) $('#gate-note').innerHTML = 'Jedno stuknięcie po otwarciu, potem wystarczy mówić.<br><br><b>Dodaj Jarvisa do ekranu początkowego:</b> Udostępnij → Do ekranu początkowego.';
   setInterval(() => { if (rt.started) renderStatus(); }, 1000);
   setInterval(checkReminders, 15000);
