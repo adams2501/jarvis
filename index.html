@@ -480,7 +480,7 @@ const DEFAULTS = {
   tts: 'system', elKey: '', elVoice: DEF_VOICE, voiceURI: '', rate: 1.05,
   greeted: false, voiceMigrated: false, voiceSkip: false, elOk: '', kolega: false
 };
-const APP_VERSION = '14';
+const APP_VERSION = '15';
 /* Wyłuskuje klucz ElevenLabs z wklejonego tekstu (spacje, podwójne wklejenie, otoczka). */
 function pickElKey(raw) {
   const s = String(raw || '');
@@ -527,7 +527,7 @@ const persist = name => store(name, S[name]);
 const rt = {
   started: false, listener: null, engine: 'none', busy: null, awakeUntil: 0,
   model: { fast: null, big: null }, noWeb: false, latency: null, wakeLock: null,
-  needTap: false, lastHeardAt: 0
+  needTap: false, lastHeardAt: 0, elQuotaUntil: 0
 };
 const jobCtls = new Map();
 let pendingNode = null;
@@ -622,7 +622,7 @@ const audio = {
 const speaker = {
   q: [], cur: null, active: false, pulse: 0, voice: null, src: null, warned: false,
   sysOk: 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window,
-  useEleven() { return S.settings.tts === 'eleven' && !!S.settings.elKey; },
+  useEleven() { return S.settings.tts === 'eleven' && !!S.settings.elKey && !(rt.elQuotaUntil > Date.now()); },
   voices() { if (!this.sysOk) return []; try { return speechSynthesis.getVoices().filter(v => /^pl([-_]|$)/i.test(v.lang)); } catch (e) { return []; } },
   pickVoice() {
     const vs = this.voices(); let v = vs.find(x => x.voiceURI === S.settings.voiceURI);
@@ -682,7 +682,12 @@ const speaker = {
     this.setActive(false);
   },
   unlockSys() { if (!this.sysOk) return; try { const u = new SpeechSynthesisUtterance('.'); u.volume = 0; u.rate = 2; u.lang = 'pl-PL'; speechSynthesis.speak(u); } catch (e) { /* ignore */ } },
-  warnEleven(err) { rt.elError = (err && err.message) || 'brak odpowiedzi'; renderTelemetry(); if (this.warned) return; this.warned = true; showBanner(`Głos ElevenLabs nie działa: ${rt.elError}. Mówię głosem telefonu. Sprawdź klucz ElevenLabs w ustawieniach.`); }
+  warnEleven(err) {
+    rt.elError = (err && err.message) || 'brak odpowiedzi';
+    if (err && err.quota) { rt.elQuotaUntil = Date.now() + 3600000; rt.elError = 'limit ElevenLabs'; }
+    renderTelemetry(); if (this.warned) return; this.warned = true;
+    showBanner(err && err.quota ? 'Skończył się miesięczny limit głosu w ElevenLabs. Do czasu odnowienia limitu (albo wyższego planu w ElevenLabs) mówię głosem Maca. Klucz zostaje zapisany, nic nie trzeba wpisywać.' : `Głos ElevenLabs nie działa: ${rt.elError}. Mówię głosem Maca.`);
+  }
 };
 async function elevenTTS(text, retry = true) {
   const s = S.settings;
@@ -697,7 +702,13 @@ async function elevenTTS(text, retry = true) {
   } catch (e) { clearTimeout(to); throw new Error('brak połączenia z ElevenLabs'); }
   clearTimeout(to);
   if (r.status === 429 && retry) { await sleep(700); return elevenTTS(text, false); }
-  if (!r.ok) { let detail = ''; try { const j = await r.clone().json(); detail = (j && j.detail && (j.detail.message || j.detail.status)) || ''; } catch (e) { /* ignore */ } throw new Error((r.status === 401 ? 'zły klucz ElevenLabs' : (r.status === 402 || r.status === 429) ? 'skończył się limit ElevenLabs' : r.status === 403 ? 'klucz nie ma dostępu do tej funkcji' : r.status === 404 ? 'nie ma takiego głosu na tym koncie' : `błąd ElevenLabs ${r.status}`) + (detail ? ` (${String(detail).slice(0, 80)})` : '')); }
+  if (!r.ok) {
+    let detail = '', status = '';
+    try { const j = await r.clone().json(); status = String((j && j.detail && j.detail.status) || ''); detail = (j && j.detail && (j.detail.message || j.detail.status)) || ''; } catch (e) { /* ignore */ }
+    /* Wyczerpany limit to nie zły klucz: klucza nigdy wtedy nie kasujemy. */
+    if (/quota|credits|limit/i.test(status + ' ' + detail) || r.status === 402) { const er = new Error('skończył się limit znaków ElevenLabs'); er.quota = true; throw er; }
+    throw new Error((r.status === 401 ? 'zły klucz ElevenLabs' : r.status === 429 ? 'ElevenLabs jest teraz przeciążony' : r.status === 403 ? 'klucz nie ma dostępu do tej funkcji' : r.status === 404 ? 'nie ma takiego głosu na tym koncie' : `błąd ElevenLabs ${r.status}`) + (detail ? ` (${String(detail).slice(0, 80)})` : ''));
+  }
   const c = audio.get(); if (!c) throw new Error('brak dźwięku');
   return await new Promise((res, rej) => { const p = c.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); });
 }
@@ -1633,7 +1644,7 @@ function renderTelemetry() {
   add(S.settings.brain === 'smart' ? 'Mądrzejszy' : 'Najszybszy');
   if (rt.latency != null) add(`${(rt.latency / 1000).toFixed(1).replace('.', ',')} s`);
   add(rt.engine === 'cloud' ? 'Mowa: chmura' : rt.engine === 'system' ? 'Mowa: system' : 'Mowa: brak', rt.listener && !rt.needTap ? 'on' : 'warn');
-  add(speaker.useEleven() ? (rt.elError ? 'Głos: błąd ElevenLabs' : 'Głos: ElevenLabs') : 'Głos: telefon', speaker.useEleven() ? (rt.elError ? 'warn' : 'on') : undefined);
+  add(rt.elQuotaUntil > Date.now() ? 'Głos: Mac (limit ElevenLabs)' : speaker.useEleven() ? (rt.elError ? 'Głos: błąd ElevenLabs' : 'Głos: ElevenLabs') : 'Głos: systemowy', rt.elQuotaUntil > Date.now() ? 'warn' : speaker.useEleven() ? (rt.elError ? 'warn' : 'on') : undefined);
   if (S.settings.webSearch) add('Internet', rt.noWeb ? 'warn' : 'on');
   if (!IS_IOS && rt.mac) add(rt.mac.ok ? 'Mac' : 'Mac: brak pomocnika', rt.mac.ok ? 'on' : 'warn');
   const al = S.timers.filter(t => !t.fired).length;
@@ -1818,7 +1829,10 @@ async function acceptVoiceKey(raw) {
   msg.textContent = 'Sprawdzam klucz…';
   const s = S.settings, prev = s.elKey; s.elKey = k;
   try { await elevenTTS('Tak.'); }
-  catch (e) { s.elKey = prev; vkBusy = false; msg.textContent = `Ten klucz nie działa: ${e.message}.`; return; }
+  catch (e) {
+    if (e && e.quota) rt.elQuotaUntil = Date.now() + 3600000;
+    else { s.elKey = prev; vkBusy = false; msg.textContent = `Ten klucz nie działa: ${e.message}.`; return; }
+  }
   vkBusy = false;
   s.tts = 'eleven'; s.voiceSkip = false; s.elOk = keyFp(k);
   if (!s.elVoice || s.elVoice === 'EXAVITQu4vr4xnSDxMaL') { s.elVoice = DEF_VOICE; s.gender = 'ona'; }
@@ -1936,7 +1950,10 @@ $('#set-elkey').addEventListener('input', e => {
     if (st) { st.classList.remove('ok'); st.textContent = 'Sprawdzam nowy klucz…'; }
     const s = S.settings, prev = s.elKey; s.elKey = k;
     try { await elevenTTS('Tak.'); }
-    catch (err) { s.elKey = prev; if (st) st.textContent = `Nowy klucz nie działa (${err.message}). Zostawiam poprzedni.`; return; }
+    catch (err) {
+      if (err && err.quota) rt.elQuotaUntil = Date.now() + 3600000;
+      else { s.elKey = prev; if (st) st.textContent = `Nowy klucz nie działa (${err.message}). Zostawiam poprzedni.`; return; }
+    }
     s.tts = 'eleven'; s.voiceSkip = false; s.elOk = keyFp(k);
     if (s.elVoice === 'EXAVITQu4vr4xnSDxMaL' || !s.elVoice) { s.elVoice = DEF_VOICE; s.gender = 'ona'; }
     saveNow(); renderSettings(); renderTelemetry(); checkElKey();
